@@ -1,0 +1,8 @@
+[Unit]
+Description=Check VPN services and send Telegram alert
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+ExecStart=/bin/bash /opt/vpn-product/src/deploy/scripts/check_services_alert.sh

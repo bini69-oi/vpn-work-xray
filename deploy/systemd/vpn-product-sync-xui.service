@@ -1,0 +1,10 @@
+[Unit]
+Description=Sync 3x-ui inbound to vpn-product profile
+After=network-online.target vpn-productd.service x-ui.service
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+EnvironmentFile=/etc/vpn-product/sync-xui.env
+ExecStart=/bin/bash /opt/vpn-product/src/deploy/scripts/sync_xui_to_product.sh
+

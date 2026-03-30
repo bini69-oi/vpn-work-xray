@@ -1,0 +1,9 @@
+[Unit]
+Description=Sync x-ui usage counters into vpn-product
+After=network-online.target x-ui.service vpn-productd.service
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+ExecStart=/bin/bash /opt/vpn-product/src/deploy/scripts/sync_xui_usage_to_product.sh
+

@@ -1,0 +1,10 @@
+# Local build binaries
+vpn-productd
+vpn-productctl
+.dist/
+
+# Coverage artifacts
+*.cover
+coverage.out
+coverage.html
+

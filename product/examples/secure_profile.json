@@ -1,0 +1,91 @@
+{
+  "id": "my-secure-profile",
+  "name": "My Secure Profile",
+  "description": "Customize server credentials before use.",
+  "enabled": true,
+  "routeMode": "split",
+  "endpoints": [
+    {
+      "name": "primary",
+      "address": "example.com",
+      "port": 443,
+      "protocol": "vless",
+      "serverTag": "proxy",
+      "uuid": "00000000-0000-0000-0000-000000000001",
+      "flow": "xtls-rprx-vision",
+      "serverName": "example.com",
+      "fingerprint": "chrome",
+      "realityPublicKey": "replace-me",
+      "realityShortId": "",
+      "realityShortIds": [
+        ""
+      ],
+      "realityServerNames": [
+        "example.com"
+      ],
+      "realitySpiderX": "/"
+    },
+    {
+      "name": "fallback-hy2",
+      "address": "example.com",
+      "port": 8443,
+      "protocol": "hysteria2",
+      "serverTag": "proxy",
+      "hysteriaPassword": "replace-me"
+    },
+    {
+      "name": "fallback-wg",
+      "address": "example.com",
+      "port": 51820,
+      "protocol": "wireguard",
+      "serverTag": "proxy"
+    }
+  ],
+  "preferredId": "primary",
+  "fallback": {
+    "endpointIds": [
+      "primary",
+      "fallback-hy2",
+      "fallback-wg"
+    ]
+  },
+  "dns": {
+    "primary": [
+      "https://1.1.1.1/dns-query",
+      "https://dns.google/dns-query"
+    ],
+    "fallback": [
+      "9.9.9.9",
+      "8.8.8.8"
+    ],
+    "useDoH": true,
+    "useDoQ": true,
+    "queryIPv6": false
+  },
+  "proxyDomains": [
+    "geosite:youtube",
+    "geosite:netflix"
+  ],
+  "proxyCountries": [
+    "us",
+    "de"
+  ],
+  "proxyCidrs": [
+    "8.8.8.0/24"
+  ],
+  "invertRouting": false,
+  "tun": {
+    "enabled": false,
+    "interface": "utun0",
+    "mtu": 1500,
+    "ipv4Address": "172.19.0.1/30"
+  },
+  "trafficLimitMb": 0,
+  "reconnectPolicy": {
+    "maxRetries": 5,
+    "baseBackoff": 2000000000,
+    "maxBackoff": 30000000000,
+    "failureWindow": 120000000000,
+    "degradedFailures": 2
+  }
+}

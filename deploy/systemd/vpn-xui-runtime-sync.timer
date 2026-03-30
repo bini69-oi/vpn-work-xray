@@ -1,0 +1,10 @@
+[Unit]
+Description=Periodic 3x-ui runtime sync
+
+[Timer]
+OnBootSec=20s
+OnUnitActiveSec=30s
+Unit=vpn-xui-runtime-sync.service
+
+[Install]
+WantedBy=timers.target

@@ -1,0 +1,28 @@
+run:
+  timeout: 5m
+  tests: true
+
+linters:
+  enable:
+    - govet
+    - staticcheck
+    - unused
+    - ineffassign
+    - errcheck
+    - gosec
+    - revive
+    - gosimple
+
+linters-settings:
+  revive:
+    rules:
+      - name: blank-imports
+      - name: context-as-argument
+      - name: error-return
+      - name: var-naming
+      - name: unused-parameter
+
+issues:
+  exclude-use-default: false
+  max-issues-per-linter: 0
+  max-same-issues: 0

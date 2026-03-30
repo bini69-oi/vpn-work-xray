@@ -1,0 +1,11 @@
+[Unit]
+Description=Periodic VPN service status alerts
+
+[Timer]
+OnBootSec=2m
+OnUnitActiveSec=1m
+Unit=vpn-product-service-alert.service
+Persistent=true
+
+[Install]
+WantedBy=timers.target

@@ -1,0 +1,7 @@
+[Unit]
+Description=Sync 3x-ui runtime with database
+After=network.target
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/bin/vpn-xui-runtime-sync.sh
