@@ -8,3 +8,6 @@ vpn-productctl
 coverage.out
 coverage.html
 
+# Local migration backups (can contain secrets)
+deploy/backups/
+

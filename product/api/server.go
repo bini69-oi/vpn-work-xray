@@ -392,10 +392,12 @@ func (s *Server) subscriptionUserInfoHeader(ctx context.Context, token string) s
 	used := int64(0)
 	total := int64(1024) * 1024 * 1024 * 1024 // default 1 TB
 	expireUnix := int64(0)
+	userScoped := false
 	if resolved.ExpiresAt != nil && !resolved.ExpiresAt.IsZero() {
 		expireUnix = resolved.ExpiresAt.UTC().Unix()
 	}
 	if strings.TrimSpace(resolved.UserID) != "" {
+		userScoped = true
 		xuiDBPath := s.xuiDBPath
 		if env := strings.TrimSpace(os.Getenv("VPN_PRODUCT_3XUI_DB_PATH")); env != "" {
 			xuiDBPath = env
@@ -416,7 +418,9 @@ func (s *Server) subscriptionUserInfoHeader(ctx context.Context, token string) s
 			}
 		}
 	}
-	if used == 0 {
+	// Never mix in shared profile counters for user-scoped subscriptions.
+	// If x-ui usage cannot be read, keep safe defaults instead of showing global inbound usage.
+	if !userScoped && used == 0 {
 		// fallback for legacy profiles without user-scoped x-ui stats
 	for _, pid := range resolved.ProfileIDs {
 		p, perr := s.profiles.Get(ctx, pid)

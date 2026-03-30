@@ -1,0 +1,7 @@
+[Unit]
+Description=Sync 3x-ui client display limits from client_traffics
+After=network.target
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/bin/sync-xui-client-limits.py

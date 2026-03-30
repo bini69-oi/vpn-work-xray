@@ -1,0 +1,10 @@
+[Unit]
+Description=Periodic sync of 3x-ui client display limits
+
+[Timer]
+OnBootSec=25s
+OnUnitActiveSec=30s
+Unit=vpn-xui-client-limits-sync.service
+
+[Install]
+WantedBy=timers.target
