@@ -71,6 +71,8 @@ type Server struct {
 	adminAllowlist []netip.Prefix
 	xuiDBPath   string
 	xuiInboundPort int
+	clientLimitIP int32
+	issueStrict int32
 	log         *logging.Logger
 	counter     uint64
 	trafficMu   sync.Mutex
@@ -101,6 +103,8 @@ func NewServer(connection ConnectionService, profiles ProfileService, diagnostic
 		apiToken:    apiToken,
 		xuiDBPath:   "/etc/x-ui/x-ui.db",
 		xuiInboundPort: 8443,
+		clientLimitIP: 3,
+		issueStrict:  1,
 		log:         logger.WithModule("api"),
 		rateByIP:    map[string]rateEntry{},
 		publicRateByKey: map[string]rateEntry{},
@@ -128,6 +132,20 @@ func (s *Server) With3XUI(dbPath string, inboundPort int) *Server {
 	if inboundPort > 0 {
 		s.xuiInboundPort = inboundPort
 	}
+	return s
+}
+
+func (s *Server) WithClientLimitIP(limitIP int) *Server {
+	atomic.StoreInt32(&s.clientLimitIP, int32(normalizeClientLimitIP(limitIP)))
+	return s
+}
+
+func (s *Server) WithIssueStrict(strict bool) *Server {
+	if strict {
+		atomic.StoreInt32(&s.issueStrict, 1)
+		return s
+	}
+	atomic.StoreInt32(&s.issueStrict, 0)
 	return s
 }
 
@@ -160,6 +178,7 @@ func (s *Server) Handler() http.Handler {
 	admin.HandleFunc("/v1/stats/profiles", s.handleProfileStats)
 	admin.HandleFunc("/v1/integration/3xui/users/upsert", s.handlePanelUserUpsert)
 	admin.HandleFunc("/v1/integration/3xui/users", s.handlePanelUsersList)
+	admin.HandleFunc("/v1/integration/3xui/limit-ip", s.handle3XUILimitIP)
 	admin.HandleFunc("/v1/health", s.handleHealth)
 	admin.HandleFunc("/v1/readiness", s.handleReadiness)
 	admin.HandleFunc("/v1/delivery/links", s.handleDeliveryLinks)
@@ -174,6 +193,7 @@ func (s *Server) Handler() http.Handler {
 	admin.HandleFunc("/admin/issue/history", s.handleIssueHistory)
 	admin.HandleFunc("/admin/issue/apply-to-3xui", s.handleIssueApplyTo3XUI)
 	admin.HandleFunc("/admin/subscriptions/lifecycle", s.handleSubscriptionLifecycle)
+	admin.HandleFunc("/admin/integration/3xui/limit-ip", s.handle3XUILimitIP)
 	admin.Handle("/v1/metrics", telemetry.Handler())
 
 	root.HandleFunc("/public/subscriptions/", s.handlePublicSubscription)
@@ -544,10 +564,25 @@ func (s *Server) handleIssueLink(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, err)
 		return
 	}
+	revokeOnFailure := func(code string, message string, rootErr error) {
+		_ = s.subs.Revoke(r.Context(), item.ID)
+		if rootErr != nil {
+			writeError(w, http.StatusServiceUnavailable, perrors.Wrap(code, message+": "+rootErr.Error(), rootErr))
+			return
+		}
+		writeError(w, http.StatusServiceUnavailable, perrors.New(code, message))
+	}
 	resp := v1.IssueLinkResponse{
 		Subscription: item,
 		URL:          safeSubscriptionURLFromRequest(r, item.Token),
 		Days:         30,
+	}
+	if strings.TrimSpace(resp.URL) == "" {
+		if s.isIssueStrict() {
+			revokeOnFailure("VPN_ISSUE_001", "issue aborted: public subscription URL is not configured", nil)
+			return
+		}
+		resp.ApplyError = "public subscription URL is empty"
 	}
 	profileID, applyErr := s.applySubscriptionTo3XUI(r.Context(), userID, item.ID, "")
 	if applyErr == nil {
@@ -556,8 +591,67 @@ func (s *Server) handleIssueLink(w http.ResponseWriter, r *http.Request) {
 	} else {
 		resp.AppliedTo3XUI = false
 		resp.ApplyError = applyErr.Error()
+		if s.isIssueStrict() {
+			revokeOnFailure("VPN_ISSUE_002", "issue aborted: apply to 3x-ui failed", applyErr)
+			return
+		}
+	}
+	if verifyErr := s.verifyIssuedLink(r.Context(), userID, item.Token); verifyErr != nil {
+		if s.isIssueStrict() {
+			revokeOnFailure("VPN_ISSUE_003", "issue aborted: post-issue verification failed", verifyErr)
+			return
+		}
+		if strings.TrimSpace(resp.ApplyError) == "" {
+			resp.ApplyError = verifyErr.Error()
+		}
 	}
 	writeJSON(w, http.StatusOK, resp)
+}
+
+func (s *Server) resolveXUIConfig() (string, int) {
+	xuiDBPath := s.xuiDBPath
+	if env := strings.TrimSpace(os.Getenv("VPN_PRODUCT_3XUI_DB_PATH")); env != "" {
+		xuiDBPath = env
+	}
+	xuiInboundPort := s.xuiInboundPort
+	if raw := strings.TrimSpace(os.Getenv("VPN_PRODUCT_3XUI_INBOUND_PORT")); raw != "" {
+		if n, convErr := strconv.Atoi(raw); convErr == nil && n > 0 {
+			xuiInboundPort = n
+		}
+	}
+	return xuiDBPath, xuiInboundPort
+}
+
+func (s *Server) verifyIssuedLink(ctx context.Context, userID string, token string) error {
+	if s.subs == nil {
+		return errors.New("subscriptions are not configured")
+	}
+	content, resolved, err := s.subs.BuildContentByToken(ctx, strings.TrimSpace(token))
+	if err != nil {
+		return err
+	}
+	if strings.TrimSpace(content) == "" {
+		return errors.New("subscription content is empty")
+	}
+	resolvedUserID := strings.TrimSpace(resolved.UserID)
+	if resolvedUserID != "" && resolvedUserID != strings.TrimSpace(userID) {
+		return errors.New("issued token does not belong to requested user")
+	}
+	if resolvedUserID == "" {
+		return nil
+	}
+	xuiDBPath, xuiInboundPort := s.resolveXUIConfig()
+	usage, err := xui.GetClientUsage(ctx, xuiDBPath, xuiInboundPort, resolvedUserID)
+	if err != nil {
+		return err
+	}
+	if !usage.Enable {
+		return errors.New("x-ui client is disabled")
+	}
+	if usage.Total <= 0 {
+		return errors.New("x-ui client total limit is not set")
+	}
+	return nil
 }
 
 func (s *Server) handleIssueHistory(w http.ResponseWriter, r *http.Request) {
@@ -683,6 +777,7 @@ func (s *Server) applySubscriptionTo3XUI(ctx context.Context, userID string, sub
 		Email:       strings.TrimSpace(userID),
 		UUID:        userUUID,
 		Flow:        userProfile.Endpoints[0].Flow,
+		LimitIP:     s.currentClientLimitIP(),
 		TotalBytes:  1024 * 1024 * 1024 * 1024,
 		ExpiresAt:   sub.ExpiresAt,
 	}); err != nil {
@@ -743,6 +838,7 @@ func (s *Server) handleSubscriptionLifecycle(w http.ResponseWriter, r *http.Requ
 			InboundPort: xuiInboundPort,
 			Email:       userID,
 			Enable:      true,
+			LimitIP:     s.currentClientLimitIP(),
 			TotalBytes:  1024 * 1024 * 1024 * 1024,
 			ExpiresAt:   expires,
 		}); err != nil {
@@ -775,6 +871,7 @@ func (s *Server) handleSubscriptionLifecycle(w http.ResponseWriter, r *http.Requ
 			InboundPort: xuiInboundPort,
 			Email:       userID,
 			Enable:      false,
+			LimitIP:     s.currentClientLimitIP(),
 			TotalBytes:  1024 * 1024 * 1024 * 1024,
 			ExpiresAt:   item.ExpiresAt,
 		}); err != nil {
@@ -1099,6 +1196,60 @@ func (s *Server) handlePanelUsersList(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"items": items})
+}
+
+func normalizeClientLimitIP(raw int) int {
+	if raw <= 0 {
+		return 3
+	}
+	if raw > 64 {
+		return 64
+	}
+	return raw
+}
+
+func (s *Server) currentClientLimitIP() int {
+	return normalizeClientLimitIP(int(atomic.LoadInt32(&s.clientLimitIP)))
+}
+
+func (s *Server) isIssueStrict() bool {
+	return atomic.LoadInt32(&s.issueStrict) == 1
+}
+
+func (s *Server) handle3XUILimitIP(w http.ResponseWriter, r *http.Request) {
+	switch r.Method {
+	case http.MethodGet:
+		writeJSON(w, http.StatusOK, v1.Set3XUILimitIPResponse{
+			OK:      true,
+			LimitIP: s.currentClientLimitIP(),
+		})
+		return
+	case http.MethodPost:
+	default:
+		writeError(w, http.StatusMethodNotAllowed, perrors.New("VPN_API_METHOD_001", "method not allowed"))
+		return
+	}
+	var req v1.Set3XUILimitIPRequest
+	if err := json.NewDecoder(io.LimitReader(r.Body, 1<<20)).Decode(&req); err != nil {
+		writeError(w, http.StatusBadRequest, perrors.New("VPN_API_BODY_012", "invalid json body"))
+		return
+	}
+	limitIP := normalizeClientLimitIP(req.LimitIP)
+	atomic.StoreInt32(&s.clientLimitIP, int32(limitIP))
+	resp := v1.Set3XUILimitIPResponse{
+		OK:      true,
+		LimitIP: limitIP,
+	}
+	if req.ApplyExisting {
+		xuiDBPath, xuiInboundPort := s.resolveXUIConfig()
+		changed, err := xui.UpdateAllClientLimitIP(r.Context(), xuiDBPath, xuiInboundPort, limitIP)
+		if err != nil {
+			writeError(w, http.StatusBadRequest, perrors.Wrap("VPN_3XUI_004", "update x-ui limitIp failed: "+err.Error(), err))
+			return
+		}
+		resp.AppliedCount = changed
+	}
+	writeJSON(w, http.StatusOK, resp)
 }
 
 func (s *Server) handleHealth(w http.ResponseWriter, r *http.Request) {

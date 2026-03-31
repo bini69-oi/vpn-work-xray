@@ -7,6 +7,8 @@ on:
 jobs:
   test-lint:
     runs-on: ubuntu-latest
+    env:
+      MIN_COVERAGE: "55.0"
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -17,13 +19,14 @@ jobs:
           go-version-file: go.mod
           cache: true
 
-      - name: Run tests
-        run: make test
+      - name: Setup golangci-lint
+        run: go install github.com/golangci/golangci-lint/cmd/golangci-lint@latest
 
-      - name: Run coverage report
-        run: make cover
+      - name: Run full verify pipeline
+        run: make verify
 
-      - name: Run lint
-        run: |
-          go install github.com/golangci/golangci-lint/cmd/golangci-lint@latest
-          make lint
+      - name: Upload coverage artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-out
+          path: coverage.out

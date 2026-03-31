@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 import json
+import os
 import sqlite3
 
 DB = "/etc/x-ui/x-ui.db"
@@ -15,6 +16,15 @@ def total_gb(total_bytes: int) -> int:
 
 
 def main() -> None:
+    limit_ip_raw = os.getenv("VPN_PRODUCT_LIMIT_IP", str(DEFAULT_LIMIT_IP)).strip()
+    try:
+        limit_ip = int(limit_ip_raw)
+    except ValueError:
+        limit_ip = DEFAULT_LIMIT_IP
+    if limit_ip <= 0:
+        limit_ip = DEFAULT_LIMIT_IP
+    if limit_ip > 64:
+        limit_ip = 64
     conn = sqlite3.connect(DB)
     cur = conn.cursor()
     row = cur.execute(
@@ -46,7 +56,7 @@ def main() -> None:
         cl["totalGB"] = new_total_gb
         cl["expiryTime"] = expiry_ms
         cl["enable"] = bool(enable)
-        cl["limitIp"] = DEFAULT_LIMIT_IP
+        cl["limitIp"] = limit_ip
         after = (cl.get("totalGB"), cl.get("expiryTime"), cl.get("enable"), cl.get("limitIp"))
         if before != after:
             changed += 1

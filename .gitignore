@@ -1,6 +1,8 @@
 # Local build binaries
 vpn-productd
 vpn-productctl
+__pycache__/
+*.pyc
 .dist/
 
 # Coverage artifacts

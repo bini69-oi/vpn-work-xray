@@ -46,6 +46,8 @@ VPN_PRODUCT_DATA_DIR=/var/lib/vpn-product
 VPN_PRODUCT_LOG_FILE=/var/log/vpn-product/vpn-productd.log
 VPN_PRODUCT_3XUI_DB_PATH=/etc/x-ui/x-ui.db
 VPN_PRODUCT_3XUI_INBOUND_PORT=8443
+VPN_PRODUCT_PUBLIC_BASE_URL=https://${NEW_IP//./-}.sslip.io
+VPN_PRODUCT_LIMIT_IP=3
 EOF
 
 cat > /etc/caddy/Caddyfile <<EOF

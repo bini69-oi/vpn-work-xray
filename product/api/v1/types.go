@@ -80,3 +80,14 @@ type LifecycleResponse struct {
 	ProfileID      string `json:"profileId,omitempty"`
 	ExpiresAt      string `json:"expiresAt,omitempty"`
 }
+
+type Set3XUILimitIPRequest struct {
+	LimitIP      int  `json:"limitIp"`
+	ApplyExisting bool `json:"applyExisting,omitempty"`
+}
+
+type Set3XUILimitIPResponse struct {
+	OK           bool `json:"ok"`
+	LimitIP      int  `json:"limitIp"`
+	AppliedCount int  `json:"appliedCount,omitempty"`
+}
