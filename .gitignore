@@ -11,3 +11,6 @@ coverage.html
 # Local migration backups (can contain secrets)
 deploy/backups/
 
+# Temporary downloaded assets in local var environments
+var/**/assets/*.tmp
+

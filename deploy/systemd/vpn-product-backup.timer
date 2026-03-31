@@ -1,0 +1,10 @@
+[Unit]
+Description=Daily vpn-product backup at midnight
+
+[Timer]
+OnCalendar=*-*-* 00:00:00
+Persistent=true
+Unit=vpn-product-backup.service
+
+[Install]
+WantedBy=timers.target

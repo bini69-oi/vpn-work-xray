@@ -1,8 +1,15 @@
 GO ?= go
 GOLANGCI_LINT ?= $(shell $(GO) env GOPATH)/bin/golangci-lint
-PKGS ?= ./product/... ./cmd/vpn-productd ./cmd/vpn-productctl
+CMD_PKGS :=
+ifneq ($(wildcard cmd/vpn-productd),)
+CMD_PKGS += ./cmd/vpn-productd
+endif
+ifneq ($(wildcard cmd/vpn-productctl),)
+CMD_PKGS += ./cmd/vpn-productctl
+endif
+PKGS ?= ./product/... $(CMD_PKGS)
 COVERPKGS ?= ./product/configgen ./product/api ./product/storage/sqlite ./product/connection
-LINT_TARGETS ?= ./product/... ./cmd/vpn-productd ./cmd/vpn-productctl
+LINT_TARGETS ?= ./product/... $(CMD_PKGS)
 
 .PHONY: test bench lint cover
 
