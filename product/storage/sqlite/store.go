@@ -502,7 +502,7 @@ func (s *Store) RevokeSubscription(ctx context.Context, id string) error {
 
 func (s *Store) RevokeActiveSubscriptionsByUser(ctx context.Context, userID string) (int64, error) {
 	now := time.Now().UTC().Format(time.RFC3339Nano)
-	res, err := s.db.ExecContext(ctx, `UPDATE subscriptions SET status = 'revoked', revoked = 1, revoked_at = ?, updated_at = ? WHERE user_id = ? AND revoked = 0 AND status = 'active'`, now, now, userID)
+	res, err := s.db.ExecContext(ctx, `UPDATE subscriptions SET status = 'revoked', revoked = 1, revoked_at = ?, updated_at = ? WHERE user_id = ? AND revoked = 0`, now, now, userID)
 	if err != nil {
 		return 0, dbErr("revoke_subscriptions_by_user", err)
 	}
