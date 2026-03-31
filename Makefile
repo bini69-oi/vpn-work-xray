@@ -1,6 +1,7 @@
 GO ?= go
 GOLANGCI_LINT ?= $(shell $(GO) env GOPATH)/bin/golangci-lint
 MIN_COVERAGE ?= 55.0
+XRAY_LOCATION_ASSET ?= var/vpn-product-predeploy3/assets
 CMD_PKGS :=
 ifneq ($(wildcard cmd/vpn-productd),)
 CMD_PKGS += ./cmd/vpn-productd
@@ -19,6 +20,7 @@ test:
 	$(GO) test $(PKGS)
 
 test-all:
+	XRAY_LOCATION_ASSET="$(XRAY_LOCATION_ASSET)" bash scripts/prepare_test_assets.sh
 	$(GO) test $(ALL_GO_PKGS)
 
 bench:
@@ -33,6 +35,7 @@ cover:
 
 verify:
 	$(GO) test $(PKGS)
+	XRAY_LOCATION_ASSET="$(XRAY_LOCATION_ASSET)" bash scripts/prepare_test_assets.sh
 	$(GO) test $(ALL_GO_PKGS)
 	$(GOLANGCI_LINT) run $(LINT_TARGETS)
 	$(GO) test $(COVERPKGS) -coverprofile=coverage.out

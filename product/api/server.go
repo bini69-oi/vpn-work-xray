@@ -71,7 +71,7 @@ type Server struct {
 	adminAllowlist []netip.Prefix
 	xuiDBPath   string
 	xuiInboundPort int
-	clientLimitIP int32
+	clientLimitIP int64
 	issueStrict int32
 	log         *logging.Logger
 	counter     uint64
@@ -136,7 +136,7 @@ func (s *Server) With3XUI(dbPath string, inboundPort int) *Server {
 }
 
 func (s *Server) WithClientLimitIP(limitIP int) *Server {
-	atomic.StoreInt32(&s.clientLimitIP, int32(normalizeClientLimitIP(limitIP)))
+	atomic.StoreInt64(&s.clientLimitIP, int64(normalizeClientLimitIP(limitIP)))
 	return s
 }
 
@@ -1209,7 +1209,7 @@ func normalizeClientLimitIP(raw int) int {
 }
 
 func (s *Server) currentClientLimitIP() int {
-	return normalizeClientLimitIP(int(atomic.LoadInt32(&s.clientLimitIP)))
+	return normalizeClientLimitIP(int(atomic.LoadInt64(&s.clientLimitIP)))
 }
 
 func (s *Server) isIssueStrict() bool {
@@ -1235,7 +1235,7 @@ func (s *Server) handle3XUILimitIP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	limitIP := normalizeClientLimitIP(req.LimitIP)
-	atomic.StoreInt32(&s.clientLimitIP, int32(limitIP))
+	atomic.StoreInt64(&s.clientLimitIP, int64(limitIP))
 	resp := v1.Set3XUILimitIPResponse{
 		OK:      true,
 		LimitIP: limitIP,

@@ -4,6 +4,8 @@ vpn-productctl
 __pycache__/
 *.pyc
 .dist/
+resources/geoip.dat
+resources/geosite.dat
 
 # Coverage artifacts
 *.cover
