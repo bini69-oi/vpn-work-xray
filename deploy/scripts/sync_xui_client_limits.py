@@ -5,6 +5,7 @@ import sqlite3
 DB = "/etc/x-ui/x-ui.db"
 PORT = 8443
 GB = 1024**3
+DEFAULT_LIMIT_IP = 3
 
 
 def total_gb(total_bytes: int) -> int:
@@ -41,12 +42,12 @@ def main() -> None:
             continue
         total, expiry_ms, enable = int(tr[0]), int(tr[1]), int(tr[2])
         new_total_gb = total_gb(total)
-        before = (cl.get("totalGB"), cl.get("expiryTime"), cl.get("enable"))
+        before = (cl.get("totalGB"), cl.get("expiryTime"), cl.get("enable"), cl.get("limitIp"))
         cl["totalGB"] = new_total_gb
         cl["expiryTime"] = expiry_ms
         cl["enable"] = bool(enable)
-        cl.setdefault("limitIp", 0)
-        after = (cl.get("totalGB"), cl.get("expiryTime"), cl.get("enable"))
+        cl["limitIp"] = DEFAULT_LIMIT_IP
+        after = (cl.get("totalGB"), cl.get("expiryTime"), cl.get("enable"), cl.get("limitIp"))
         if before != after:
             changed += 1
 

@@ -93,6 +93,9 @@ CREATE TABLE client_traffics (
 	if gotGB, ok := found["totalGB"].(float64); !ok || int64(gotGB) != 1 {
 		t.Fatalf("expected settings totalGB=1, got %v", found["totalGB"])
 	}
+	if limitIP, ok := found["limitIp"].(float64); !ok || int64(limitIP) != 3 {
+		t.Fatalf("expected settings limitIp=3, got %v", found["limitIp"])
+	}
 	var count int
 	if err := db.QueryRow(`SELECT COUNT(*) FROM client_traffics WHERE inbound_id = 1 AND email = ?`, "tg_1").Scan(&count); err != nil {
 		t.Fatalf("query client_traffics: %v", err)

@@ -115,3 +115,24 @@ func TestAdminUsesDedicatedTokenWhenConfigured(t *testing.T) {
 		t.Fatalf("expected admin auth to pass, got %d body=%s", w.Code, strings.TrimSpace(w.Body.String()))
 	}
 }
+
+func TestSafeSubscriptionURLFromRequestPrefersPublicBaseURL(t *testing.T) {
+	t.Setenv("VPN_PRODUCT_PUBLIC_BASE_URL", "https://198-13-186-190.sslip.io")
+	req := httptest.NewRequest(http.MethodPost, "/admin/issue/link", nil)
+	req.Host = "127.0.0.1:8080"
+	got := safeSubscriptionURLFromRequest(req, "tok123")
+	want := "https://198-13-186-190.sslip.io/public/subscriptions/tok123"
+	if got != want {
+		t.Fatalf("expected %q, got %q", want, got)
+	}
+}
+
+func TestSafeSubscriptionURLFromRequestRejectsLoopbackHostWithoutPublicBaseURL(t *testing.T) {
+	t.Setenv("VPN_PRODUCT_PUBLIC_BASE_URL", "")
+	req := httptest.NewRequest(http.MethodPost, "/admin/issue/link", nil)
+	req.Host = "127.0.0.1:8080"
+	got := safeSubscriptionURLFromRequest(req, "tok123")
+	if got != "" {
+		t.Fatalf("expected empty URL for loopback host, got %q", got)
+	}
+}

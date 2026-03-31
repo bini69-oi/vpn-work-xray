@@ -1367,8 +1367,38 @@ func subscriptionURLFromRequest(r *http.Request, token string) string {
 	return scheme + "://" + r.Host + "/public/subscriptions/" + token
 }
 
+func subscriptionURLFromBase(baseURL string, token string) string {
+	trimmed := strings.TrimRight(strings.TrimSpace(baseURL), "/")
+	if trimmed == "" || strings.TrimSpace(token) == "" {
+		return ""
+	}
+	return trimmed + "/public/subscriptions/" + token
+}
+
+func isLoopbackHost(hostport string) bool {
+	host := strings.TrimSpace(hostport)
+	if host == "" {
+		return false
+	}
+	if parsedHost, _, err := net.SplitHostPort(host); err == nil {
+		host = parsedHost
+	}
+	host = strings.Trim(strings.TrimSpace(host), "[]")
+	if strings.EqualFold(host, "localhost") {
+		return true
+	}
+	ip := net.ParseIP(host)
+	return ip != nil && ip.IsLoopback()
+}
+
 func safeSubscriptionURLFromRequest(r *http.Request, token string) string {
 	if strings.TrimSpace(token) == "" {
+		return ""
+	}
+	if publicBaseURL := strings.TrimSpace(os.Getenv("VPN_PRODUCT_PUBLIC_BASE_URL")); publicBaseURL != "" {
+		return subscriptionURLFromBase(publicBaseURL, token)
+	}
+	if isLoopbackHost(r.Host) {
 		return ""
 	}
 	return subscriptionURLFromRequest(r, token)

@@ -1,10 +1,22 @@
 #!/usr/bin/env python3
 import json
+import os
 import sqlite3
 
 PDB = "/var/lib/vpn-product/product.db"
 XDB = "/etc/x-ui/x-ui.db"
-KEEP_USERS = {"Максим", "owner_main", "new_user_1"}
+DEFAULT_KEEP_USERS = {"Максим", "owner_main"}
+
+
+def parse_keep_users() -> set[str]:
+    raw = os.getenv("KEEP_USERS", "")
+    if not raw.strip():
+        return set(DEFAULT_KEEP_USERS)
+    users = {item.strip() for item in raw.split(",") if item.strip()}
+    return users if users else set(DEFAULT_KEEP_USERS)
+
+
+KEEP_USERS = parse_keep_users()
 
 
 def cleanup_product_db() -> None:

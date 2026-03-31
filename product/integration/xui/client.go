@@ -13,6 +13,8 @@ import (
 	_ "modernc.org/sqlite"
 )
 
+const defaultClientLimitIP = 3
+
 type ClientSpec struct {
 	DBPath      string
 	InboundPort int
@@ -89,6 +91,7 @@ func UpsertClient(ctx context.Context, spec ClientSpec) error {
 			client["enable"] = true
 			client["expiryTime"] = expiryMS
 			client["totalGB"] = totalGB
+			client["limitIp"] = defaultClientLimitIP
 			clientsAny[i] = client
 			found = true
 			break
@@ -102,7 +105,7 @@ func UpsertClient(ctx context.Context, spec ClientSpec) error {
 			"enable":     true,
 			"expiryTime": expiryMS,
 			"totalGB":    totalGB,
-			"limitIp":    0,
+			"limitIp":    defaultClientLimitIP,
 		})
 	}
 	settings["clients"] = clientsAny
@@ -212,6 +215,7 @@ func UpdateClientLifecycle(ctx context.Context, spec ClientLifecycleSpec) error 
 			client["enable"] = spec.Enable
 			client["expiryTime"] = expiryMS
 			client["totalGB"] = totalGB
+			client["limitIp"] = defaultClientLimitIP
 			updated = append(updated, client)
 			continue
 		}
@@ -223,7 +227,7 @@ func UpdateClientLifecycle(ctx context.Context, spec ClientLifecycleSpec) error 
 			"enable":     true,
 			"expiryTime": expiryMS,
 			"totalGB":    totalGB,
-			"limitIp":    0,
+			"limitIp":    defaultClientLimitIP,
 		})
 	}
 	settings["clients"] = updated
