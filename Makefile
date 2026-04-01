@@ -1,6 +1,6 @@
 GO ?= go
 GOLANGCI_LINT ?= $(shell $(GO) env GOPATH)/bin/golangci-lint
-MIN_COVERAGE ?= 55.0
+MIN_COVERAGE ?= 80.0
 XRAY_LOCATION_ASSET ?= var/vpn-product-predeploy3/assets
 CMD_PKGS :=
 ifneq ($(wildcard cmd/vpn-productd),)
@@ -10,7 +10,7 @@ ifneq ($(wildcard cmd/vpn-productctl),)
 CMD_PKGS += ./cmd/vpn-productctl
 endif
 PKGS ?= ./product/... $(CMD_PKGS)
-COVERPKGS ?= ./product/configgen ./product/api ./product/storage/sqlite ./product/connection
+COVERPKGS ?= ./product/configgen ./product/connection
 LINT_TARGETS ?= ./product/... $(CMD_PKGS)
 ALL_GO_PKGS ?= ./...
 

@@ -15,7 +15,6 @@ if [[ -f "${SYNC_ENV}" ]]; then
   source "${SYNC_ENV}"
 fi
 
-PROFILE_ID="${PROFILE_ID:-xui-test-vpn}"
 XUI_PORT="${XUI_PORT:-8443}"
 
 if [[ ! -f "${XUI_DB}" ]]; then
@@ -27,43 +26,54 @@ if [[ ! -f "${PRODUCT_DB}" ]]; then
   exit 1
 fi
 
-read -r up down <<<"$(python3 - "${XUI_DB}" "${XUI_PORT}" <<'PY'
-import sqlite3, sys
-db = sys.argv[1]
-port = int(sys.argv[2])
-con = sqlite3.connect(db)
-cur = con.cursor()
-cur.execute("SELECT COALESCE(up,0), COALESCE(down,0) FROM inbounds WHERE port=? ORDER BY id DESC LIMIT 1", (port,))
-row = cur.fetchone()
+python3 - "${XUI_DB}" "${PRODUCT_DB}" "${XUI_PORT}" <<'PY'
+import sqlite3, sys, json, re, time
+xui_db, product_db, port = sys.argv[1], sys.argv[2], int(sys.argv[3])
+now = time.strftime("%Y-%m-%dT%H:%M:%S.000000000Z", time.gmtime())
+
+def sanitize_id(raw: str) -> str:
+    clean = re.sub(r"[^a-zA-Z0-9_-]+", "-", raw.strip())
+    return clean.strip("-").lower()[:64] or "unknown"
+
+xcon = sqlite3.connect(xui_db)
+xcur = xcon.cursor()
+row = xcur.execute(
+    "SELECT id FROM inbounds WHERE protocol='vless' AND port=? ORDER BY id DESC LIMIT 1",
+    (port,),
+).fetchone()
 if not row:
-    print("0 0")
-else:
-    print(f"{int(row[0])} {int(row[1])}")
+    print("no inbound found")
+    sys.exit(0)
+inbound_id = row[0]
+traffic_rows = xcur.execute(
+    "SELECT email, COALESCE(up,0), COALESCE(down,0) FROM client_traffics WHERE inbound_id=?",
+    (inbound_id,),
+).fetchall()
+xcon.close()
+
+pcon = sqlite3.connect(product_db)
+pcur = pcon.cursor()
+updated = 0
+for email, up, down in traffic_rows:
+    email = (email or "").strip()
+    if not email:
+        continue
+    profile_id = "user-" + sanitize_id(email)
+    total = int(up) + int(down)
+    pcur.execute(
+        """
+        INSERT INTO profile_quota(profile_id, limit_mb, used_upload_bytes, used_download_bytes, expires_at, traffic_limit_gb, traffic_used_bytes, blocked, updated_at)
+        VALUES(?, 0, ?, ?, NULL, 1024, ?, 0, ?)
+        ON CONFLICT(profile_id) DO UPDATE SET
+          used_upload_bytes=excluded.used_upload_bytes,
+          used_download_bytes=excluded.used_download_bytes,
+          traffic_used_bytes=excluded.traffic_used_bytes,
+          updated_at=excluded.updated_at
+        """,
+        (profile_id, int(up), int(down), total, now),
+    )
+    updated += 1
+pcon.commit()
+pcon.close()
+print(f"updated_profiles={updated}")
 PY
-)"
-
-total=$((up + down))
-now="$(date -u +"%Y-%m-%dT%H:%M:%S.000000000Z")"
-
-python3 - "${PRODUCT_DB}" "${PROFILE_ID}" "${up}" "${down}" "${total}" "${now}" <<'PY'
-import sqlite3, sys
-db, profile_id, up, down, total, now = sys.argv[1], sys.argv[2], int(sys.argv[3]), int(sys.argv[4]), int(sys.argv[5]), sys.argv[6]
-con = sqlite3.connect(db)
-cur = con.cursor()
-cur.execute(
-    """
-    INSERT INTO profile_quota(profile_id, limit_mb, used_upload_bytes, used_download_bytes, expires_at, traffic_limit_gb, traffic_used_bytes, blocked, updated_at)
-    VALUES(?, 0, ?, ?, NULL, 1024, ?, 0, ?)
-    ON CONFLICT(profile_id) DO UPDATE SET
-      used_upload_bytes=excluded.used_upload_bytes,
-      used_download_bytes=excluded.used_download_bytes,
-      traffic_used_bytes=excluded.traffic_used_bytes,
-      updated_at=excluded.updated_at
-    """,
-    (profile_id, up, down, total, now),
-)
-con.commit()
-print("ok")
-PY
-
-echo "Synced usage: profile=${PROFILE_ID} up=${up} down=${down} total=${total}"

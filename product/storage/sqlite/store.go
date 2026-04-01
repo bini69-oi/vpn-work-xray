@@ -483,12 +483,7 @@ func (s *Store) GetSubscription(ctx context.Context, id string) (domain.Subscrip
 
 func (s *Store) GetSubscriptionByToken(ctx context.Context, token string) (domain.Subscription, error) {
 	hashed := hashToken(token)
-	item, err := s.getSubscriptionByTokenHash(ctx, hashed)
-	if err == nil {
-		return item, nil
-	}
-	// Backward-compatible lookup for legacy plaintext token rows.
-	return s.getSubscriptionBy(ctx, "token", token)
+	return s.getSubscriptionByTokenHash(ctx, hashed)
 }
 
 func (s *Store) RevokeSubscription(ctx context.Context, id string) error {

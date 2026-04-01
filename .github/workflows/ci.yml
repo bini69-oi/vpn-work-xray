@@ -8,7 +8,7 @@ jobs:
   test-lint:
     runs-on: ubuntu-latest
     env:
-      MIN_COVERAGE: "55.0"
+      MIN_COVERAGE: "80.0"
       GOLANGCI_LINT_VERSION: "v1.64.8"
     steps:
       - name: Checkout

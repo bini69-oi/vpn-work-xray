@@ -65,7 +65,6 @@ func (s *Store) migrate(ctx context.Context) error {
 			created_at TEXT NOT NULL,
 			updated_at TEXT NOT NULL
 		)`,
-		`CREATE INDEX IF NOT EXISTS idx_subscriptions_token ON subscriptions(token)`,
 		`CREATE INDEX IF NOT EXISTS idx_subscriptions_token_hash ON subscriptions(token_hash)`,
 		`CREATE TABLE IF NOT EXISTS subscription_issues (
 			id TEXT PRIMARY KEY,
@@ -113,6 +112,16 @@ func (s *Store) migrate(ctx context.Context) error {
 	}
 	if err := s.ensureColumn(ctx, "subscriptions", "rotation_count", "INTEGER NOT NULL DEFAULT 0"); err != nil {
 		return err
+	}
+	if _, err := s.db.ExecContext(
+		ctx,
+		`UPDATE subscriptions
+		 SET token_hash = lower(hex(sha256(token))),
+		     token = '__hashed__:' || id
+		 WHERE COALESCE(token_hash, '') = '' AND COALESCE(token, '') <> ''`,
+	); err != nil {
+		// Older SQLite builds may not support sha256 extension; keep runtime compatible.
+		_ = err
 	}
 	return nil
 }

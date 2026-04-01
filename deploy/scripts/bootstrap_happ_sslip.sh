@@ -8,9 +8,9 @@ fi
 
 DOMAIN="${DOMAIN:-198-13-186-187.sslip.io}"
 XUI_DOMAIN="${XUI_DOMAIN:-xui-198-13-186-187.sslip.io}"
-SUB_TOKEN="${SUB_TOKEN:-CgNt6t8FJ6eabRnArv5hXDtmAxjV18zAzdn6o7FumnA}"
+SUB_TOKEN="${SUB_TOKEN:-}"
 PANEL_USER="${PANEL_USER:-admin}"
-PANEL_PASS="${PANEL_PASS:-TestVpn_2026!}"
+PANEL_PASS="${PANEL_PASS:-}"
 PANEL_BASE_PATH="${PANEL_BASE_PATH:-/vpnpanel/}"
 
 if ! command -v caddy >/dev/null 2>&1; then
@@ -21,6 +21,15 @@ fi
 if ! command -v x-ui >/dev/null 2>&1; then
   echo "Installing 3x-ui..."
   bash <(curl -Ls https://raw.githubusercontent.com/mhsanaei/3x-ui/master/install.sh)
+fi
+
+if [[ -z "${SUB_TOKEN}" ]]; then
+  echo "SUB_TOKEN is required (do not use hardcoded token defaults)"
+  exit 1
+fi
+if [[ -z "${PANEL_PASS}" ]]; then
+  echo "PANEL_PASS is required (do not use hardcoded password defaults)"
+  exit 1
 fi
 
 install -m 0644 /usr/local/x-ui/x-ui.service.debian /etc/systemd/system/x-ui.service

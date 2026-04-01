@@ -55,6 +55,14 @@ type IssueHistoryResponse struct {
 	Items []domain.SubscriptionIssue `json:"items"`
 }
 
+type IssueStatusResponse struct {
+	UserID         string `json:"userId"`
+	SubscriptionID string `json:"subscriptionId,omitempty"`
+	Status         string `json:"status"`
+	AppliedTo3XUI  bool   `json:"appliedTo3xui"`
+	VerifyError    string `json:"verifyError,omitempty"`
+}
+
 type ApplyTo3XUIRequest struct {
 	UserID         string `json:"userId"`
 	SubscriptionID string `json:"subscriptionId"`
@@ -62,6 +70,17 @@ type ApplyTo3XUIRequest struct {
 }
 
 type ApplyTo3XUIResponse struct {
+	OK             bool   `json:"ok"`
+	SubscriptionID string `json:"subscriptionId"`
+	ProfileID      string `json:"profileId"`
+}
+
+type BindSubscriptionProfileRequest struct {
+	Token     string `json:"token"`
+	ProfileID string `json:"profileId"`
+}
+
+type BindSubscriptionProfileResponse struct {
 	OK             bool   `json:"ok"`
 	SubscriptionID string `json:"subscriptionId"`
 	ProfileID      string `json:"profileId"`

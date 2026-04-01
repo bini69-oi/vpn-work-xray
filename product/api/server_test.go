@@ -4,10 +4,12 @@ import (
 	"context"
 	"net/http"
 	"net/http/httptest"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
 
+	v1 "github.com/xtls/xray-core/product/api/v1"
 	"github.com/xtls/xray-core/product/diagnostics"
 	"github.com/xtls/xray-core/product/domain"
 	"github.com/xtls/xray-core/product/health"
@@ -116,6 +118,28 @@ func TestAdminUsesDedicatedTokenWhenConfigured(t *testing.T) {
 	}
 }
 
+func TestV1AdminRoutesRespectAllowlist(t *testing.T) {
+	conn := fakeConn{}
+	profiles := fakeProfiles{}
+	logger, err := logging.New("")
+	if err != nil {
+		t.Fatal(err)
+	}
+	diag := diagnostics.NewService(conn, health.StaticProber{Default: health.ProbeResult{Healthy: true}}, profiles, fakeDBChecker{}, t.TempDir())
+	srv := NewServer(conn, profiles, diag, "api-token", logger, nil, nil).
+		WithAdminToken("admin-token").
+		WithAdminAllowlist("10.0.0.0/24")
+
+	req := httptest.NewRequest(http.MethodGet, "/v1/health", nil)
+	req.Header.Set("Authorization", "Bearer api-token")
+	req.RemoteAddr = "203.0.113.10:45555"
+	w := httptest.NewRecorder()
+	srv.Handler().ServeHTTP(w, req)
+	if w.Code != http.StatusForbidden {
+		t.Fatalf("expected v1 admin route to respect allowlist and return forbidden, got %d", w.Code)
+	}
+}
+
 func TestSafeSubscriptionURLFromRequestPrefersPublicBaseURL(t *testing.T) {
 	t.Setenv("VPN_PRODUCT_PUBLIC_BASE_URL", "https://198-13-186-190.sslip.io")
 	req := httptest.NewRequest(http.MethodPost, "/admin/issue/link", nil)
@@ -134,5 +158,32 @@ func TestSafeSubscriptionURLFromRequestRejectsLoopbackHostWithoutPublicBaseURL(t
 	got := safeSubscriptionURLFromRequest(req, "tok123")
 	if got != "" {
 		t.Fatalf("expected empty URL for loopback host, got %q", got)
+	}
+}
+
+func TestRequestClientIPDoesNotTrustXFFWithoutTrustedProxyList(t *testing.T) {
+	req := httptest.NewRequest(http.MethodGet, "/v1/health", nil)
+	req.RemoteAddr = "198.51.100.10:4444"
+	req.Header.Set("X-Forwarded-For", "10.0.0.7")
+	got := requestClientIP(req, nil)
+	if got != "198.51.100.10" {
+		t.Fatalf("expected remote addr when no trusted proxies configured, got %q", got)
+	}
+}
+
+func TestIssueCacheCompactionBoundsGrowth(t *testing.T) {
+	conn := fakeConn{}
+	profiles := fakeProfiles{}
+	logger, err := logging.New("")
+	if err != nil {
+		t.Fatal(err)
+	}
+	diag := diagnostics.NewService(conn, health.StaticProber{Default: health.ProbeResult{Healthy: true}}, profiles, fakeDBChecker{}, t.TempDir())
+	srv := NewServer(conn, profiles, diag, "token", logger, nil, nil)
+	for i := 0; i < 4300; i++ {
+		srv.setIssueCache("u|"+strconv.Itoa(i), v1.IssueLinkResponse{})
+	}
+	if len(srv.issueByIDKey) > 4096 {
+		t.Fatalf("expected bounded cache size <= 4096, got %d", len(srv.issueByIDKey))
 	}
 }

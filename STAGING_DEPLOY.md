@@ -102,9 +102,9 @@ Use this after `vpn-productd`, `xray`, and `caddy` are already installed and run
 cd /opt/vpn-product/src
 sudo DOMAIN=198-13-186-187.sslip.io \
      XUI_DOMAIN=xui-198-13-186-187.sslip.io \
-     SUB_TOKEN=CgNt6t8FJ6eabRnArv5hXDtmAxjV18zAzdn6o7FumnA \
+     SUB_TOKEN=REPLACE_WITH_REAL_SUBSCRIPTION_TOKEN \
      PANEL_USER=admin \
-     PANEL_PASS='TestVpn_2026!' \
+     PANEL_PASS='REPLACE_WITH_STRONG_PASSWORD' \
      bash deploy/scripts/bootstrap_happ_sslip.sh
 ```
 
@@ -119,7 +119,8 @@ your existing subscription token:
 
 ```bash
 cd /opt/vpn-product/src
-sudo SUB_TOKEN=CgNt6t8FJ6eabRnArv5hXDtmAxjV18zAzdn6o7FumnA \
+sudo \
+     SUB_TOKEN=REPLACE_WITH_REAL_SUBSCRIPTION_TOKEN \
      PROFILE_ID=xui-test-vpn \
      PROFILE_NAME="TEST VPN" \
      bash deploy/scripts/sync_xui_to_product.sh

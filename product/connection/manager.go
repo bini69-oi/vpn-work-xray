@@ -29,6 +29,7 @@ type Manager struct {
 	log       *logging.Logger
 	configLog *logging.Logger
 	status    domain.RuntimeStatus
+	endpointScore map[string]int
 }
 
 func NewManager(profiles ProfileReader, gen *configgen.Generator, runtime RuntimeController, reconnectEngine *reconnect.Engine, logger *logging.Logger, configLogger *logging.Logger) *Manager {
@@ -43,6 +44,7 @@ func NewManager(profiles ProfileReader, gen *configgen.Generator, runtime Runtim
 			State:     domain.StateIdle,
 			UpdatedAt: time.Now().UTC(),
 		},
+		endpointScore: map[string]int{},
 	}
 }
 
@@ -79,7 +81,7 @@ func (m *Manager) Connect(ctx context.Context, profileID string) error {
 			return errors.New("profile traffic quota exceeded")
 		}
 	}
-	endpoints := endpointOrder(profile)
+	endpoints := m.rankEndpoints(endpointOrder(profile))
 	if err := validateConnectSecurity(profile, endpoints); err != nil {
 		return err
 	}
@@ -93,6 +95,7 @@ func (m *Manager) Connect(ctx context.Context, profileID string) error {
 		artifact, err := m.gen.Generate(profile, endpoint.Name)
 		if err != nil {
 			lastErr = err
+			m.adjustEndpointScore(endpoint.Name, -1)
 			m.configLog.Errorf("config generation failed profile=%s endpoint=%s err=%v code=%s", profile.ID, endpoint.Name, err, perrors.ErrConfig.Code)
 			continue
 		}
@@ -100,6 +103,7 @@ func (m *Manager) Connect(ctx context.Context, profileID string) error {
 			m.log.Warnf("config warning profile=%s endpoint=%s warning=%s", profile.ID, endpoint.Name, warning)
 		}
 		if err := m.runtime.ApplyConfig(ctx, artifact.Path); err == nil {
+			m.adjustEndpointScore(endpoint.Name, 2)
 			m.mu.Lock()
 			m.setStatus(domain.StateConnected, profile.ID, endpoint.Name, "")
 			m.mu.Unlock()
@@ -109,6 +113,7 @@ func (m *Manager) Connect(ctx context.Context, profileID string) error {
 			return nil
 		} else {
 			lastErr = err
+			m.adjustEndpointScore(endpoint.Name, -1)
 			telemetry.Default().XrayStatus.Set(0)
 			telemetry.Default().ActiveSessions.Set(0)
 			m.log.Warnf("xray start failed profile=%s endpoint=%s err=%v code=%s", profile.ID, endpoint.Name, err, perrors.ErrCoreStart.Code)
@@ -116,12 +121,16 @@ func (m *Manager) Connect(ctx context.Context, profileID string) error {
 		if i == len(endpoints)-1 {
 			break
 		}
-		decision := m.reconnect.Next(profile.ReconnectPolicy, i)
+		decision := m.reconnect.NextForProfile(profile.ID, profile.ReconnectPolicy, i)
 		if !decision.Retry {
 			break
 		}
 		m.mu.Lock()
-		m.setStatus(domain.StateReconnecting, profile.ID, endpoint.Name, decision.Delay.String())
+		nextState := domain.StateReconnecting
+		if decision.Degraded {
+			nextState = domain.StateDegraded
+		}
+		m.setStatus(nextState, profile.ID, endpoint.Name, decision.Delay.String())
 		m.mu.Unlock()
 		select {
 		case <-ctx.Done():
@@ -134,6 +143,40 @@ func (m *Manager) Connect(ctx context.Context, profileID string) error {
 	m.setStatus(domain.StateFailed, profile.ID, "", errToString(lastErr))
 	m.mu.Unlock()
 	return lastErr
+}
+
+func (m *Manager) adjustEndpointScore(name string, delta int) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.endpointScore[name] += delta
+}
+
+func (m *Manager) rankEndpoints(endpoints []domain.Endpoint) []domain.Endpoint {
+	if len(endpoints) < 2 {
+		return endpoints
+	}
+	type scoredEndpoint struct {
+		ep    domain.Endpoint
+		score int
+	}
+	scored := make([]scoredEndpoint, 0, len(endpoints))
+	m.mu.RLock()
+	for _, ep := range endpoints {
+		scored = append(scored, scoredEndpoint{ep: ep, score: m.endpointScore[ep.Name]})
+	}
+	m.mu.RUnlock()
+	for i := 0; i < len(scored)-1; i++ {
+		for j := i + 1; j < len(scored); j++ {
+			if scored[j].score > scored[i].score {
+				scored[i], scored[j] = scored[j], scored[i]
+			}
+		}
+	}
+	out := make([]domain.Endpoint, 0, len(scored))
+	for _, item := range scored {
+		out = append(out, item.ep)
+	}
+	return out
 }
 
 func (m *Manager) Disconnect(ctx context.Context) error {

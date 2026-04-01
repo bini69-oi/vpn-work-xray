@@ -169,6 +169,10 @@ systemctl enable --now vpn-productd caddy vpn-xui-runtime-sync.timer vpn-xui-cli
 systemctl restart x-ui vpn-productd caddy
 systemctl start vpn-xui-runtime-sync.service vpn-xui-client-limits-sync.service || true
 
-echo "API_TOKEN=${API_TOKEN}"
-echo "ADMIN_TOKEN=${ADMIN_TOKEN}"
+install -m 0600 /dev/null /root/vpn-product-secrets.env
+cat > /root/vpn-product-secrets.env <<EOF
+API_TOKEN=${API_TOKEN}
+ADMIN_TOKEN=${ADMIN_TOKEN}
+EOF
+echo "Credentials saved to /root/vpn-product-secrets.env (mode 0600)"
 systemctl is-active x-ui vpn-productd caddy
