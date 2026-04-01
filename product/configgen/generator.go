@@ -417,6 +417,14 @@ func outboundFromEndpoint(ep domain.Endpoint) (map[string]any, error) {
 			"network":         "tcp",
 			"security":        "reality",
 			"realitySettings": realitySettings,
+			"sockopt": map[string]any{
+				"happyEyeballs": map[string]any{
+					"prioritizeIpv6":  false,
+					"interleave":      1,
+					"tryDelayMs":      200,
+					"maxConcurrentTry": 2,
+				},
+			},
 		}
 		if len(ep.ALPN) > 0 {
 			streamSettings["tlsSettings"] = map[string]any{

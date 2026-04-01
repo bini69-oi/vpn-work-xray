@@ -1,0 +1,9 @@
+[Unit]
+Description=Daily lifecycle sync for vpn-product subscriptions
+After=network-online.target vpn-productd.service x-ui.service
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+EnvironmentFile=-/etc/vpn-product/lifecycle-sync.env
+ExecStart=/bin/bash /usr/local/bin/lifecycle-daily-sync.sh

@@ -13,7 +13,17 @@ import (
 	_ "modernc.org/sqlite"
 )
 
-const defaultClientLimitIP = 3
+const fallbackClientLimitIP = 3
+
+func normalizeLimitIP(raw int) int {
+	if raw <= 0 {
+		return fallbackClientLimitIP
+	}
+	if raw > 64 {
+		return 64
+	}
+	return raw
+}
 
 type ClientSpec struct {
 	DBPath      string
@@ -21,6 +31,7 @@ type ClientSpec struct {
 	Email       string
 	UUID        string
 	Flow        string
+	LimitIP     int
 	TotalBytes  int64
 	ExpiresAt   *time.Time
 }
@@ -79,6 +90,7 @@ func UpsertClient(ctx context.Context, spec ClientSpec) error {
 		spec.TotalBytes = 1024 * 1024 * 1024 * 1024
 	}
 	totalGB := totalGBFromBytes(spec.TotalBytes)
+	limitIP := normalizeLimitIP(spec.LimitIP)
 	found := false
 	for i, item := range clientsAny {
 		client, ok := item.(map[string]any)
@@ -91,7 +103,7 @@ func UpsertClient(ctx context.Context, spec ClientSpec) error {
 			client["enable"] = true
 			client["expiryTime"] = expiryMS
 			client["totalGB"] = totalGB
-			client["limitIp"] = defaultClientLimitIP
+			client["limitIp"] = limitIP
 			clientsAny[i] = client
 			found = true
 			break
@@ -105,7 +117,7 @@ func UpsertClient(ctx context.Context, spec ClientSpec) error {
 			"enable":     true,
 			"expiryTime": expiryMS,
 			"totalGB":    totalGB,
-			"limitIp":    defaultClientLimitIP,
+			"limitIp":    limitIP,
 		})
 	}
 	settings["clients"] = clientsAny
@@ -153,6 +165,7 @@ type ClientLifecycleSpec struct {
 	InboundPort int
 	Email       string
 	Enable      bool
+	LimitIP     int
 	TotalBytes  int64
 	ExpiresAt   *time.Time
 }
@@ -203,6 +216,7 @@ func UpdateClientLifecycle(ctx context.Context, spec ClientLifecycleSpec) error 
 	}
 	clientsAny, _ := settings["clients"].([]any)
 	totalGB := totalGBFromBytes(spec.TotalBytes)
+	limitIP := normalizeLimitIP(spec.LimitIP)
 	updated := make([]any, 0, len(clientsAny))
 	found := false
 	for _, item := range clientsAny {
@@ -215,7 +229,7 @@ func UpdateClientLifecycle(ctx context.Context, spec ClientLifecycleSpec) error 
 			client["enable"] = spec.Enable
 			client["expiryTime"] = expiryMS
 			client["totalGB"] = totalGB
-			client["limitIp"] = defaultClientLimitIP
+			client["limitIp"] = limitIP
 			updated = append(updated, client)
 			continue
 		}
@@ -227,7 +241,7 @@ func UpdateClientLifecycle(ctx context.Context, spec ClientLifecycleSpec) error 
 			"enable":     true,
 			"expiryTime": expiryMS,
 			"totalGB":    totalGB,
-			"limitIp":    defaultClientLimitIP,
+			"limitIp":    limitIP,
 		})
 	}
 	settings["clients"] = updated
@@ -301,4 +315,59 @@ func clearInboundLimits(ctx context.Context, tx *sql.Tx, inboundID int64) error 
 		return nil
 	}
 	return fmt.Errorf("clear inbound limits: %w", err)
+}
+
+func UpdateAllClientLimitIP(ctx context.Context, dbPath string, inboundPort int, limitIP int) (int, error) {
+	if dbPath == "" {
+		return 0, errors.New("x-ui db path is required")
+	}
+	if inboundPort <= 0 {
+		return 0, errors.New("x-ui inbound port is required")
+	}
+	db, err := sql.Open("sqlite", dbPath)
+	if err != nil {
+		return 0, err
+	}
+	defer func() { _ = db.Close() }()
+	tx, err := db.BeginTx(ctx, nil)
+	if err != nil {
+		return 0, err
+	}
+	defer func() { _ = tx.Rollback() }()
+	var inboundID int64
+	var settingsRaw string
+	if err := tx.QueryRowContext(ctx, `SELECT id, settings FROM inbounds WHERE protocol = ? AND port = ? ORDER BY id DESC LIMIT 1`, "vless", inboundPort).Scan(&inboundID, &settingsRaw); err != nil {
+		return 0, fmt.Errorf("find inbound: %w", err)
+	}
+	settings := map[string]any{}
+	if err := json.Unmarshal([]byte(settingsRaw), &settings); err != nil {
+		return 0, fmt.Errorf("decode inbound settings: %w", err)
+	}
+	clientsAny, _ := settings["clients"].([]any)
+	changed := 0
+	appliedLimitIP := normalizeLimitIP(limitIP)
+	for i, item := range clientsAny {
+		client, ok := item.(map[string]any)
+		if !ok {
+			continue
+		}
+		prev, _ := client["limitIp"].(float64)
+		if int(prev) != appliedLimitIP {
+			client["limitIp"] = appliedLimitIP
+			clientsAny[i] = client
+			changed++
+		}
+	}
+	settings["clients"] = clientsAny
+	updatedSettings, err := json.Marshal(settings)
+	if err != nil {
+		return 0, fmt.Errorf("encode inbound settings: %w", err)
+	}
+	if _, err := tx.ExecContext(ctx, `UPDATE inbounds SET settings = ? WHERE id = ?`, string(updatedSettings), inboundID); err != nil {
+		return 0, fmt.Errorf("update inbound settings: %w", err)
+	}
+	if err := tx.Commit(); err != nil {
+		return 0, err
+	}
+	return changed, nil
 }

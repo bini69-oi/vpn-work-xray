@@ -483,12 +483,7 @@ func (s *Store) GetSubscription(ctx context.Context, id string) (domain.Subscrip
 
 func (s *Store) GetSubscriptionByToken(ctx context.Context, token string) (domain.Subscription, error) {
 	hashed := hashToken(token)
-	item, err := s.getSubscriptionByTokenHash(ctx, hashed)
-	if err == nil {
-		return item, nil
-	}
-	// Backward-compatible lookup for legacy plaintext token rows.
-	return s.getSubscriptionBy(ctx, "token", token)
+	return s.getSubscriptionByTokenHash(ctx, hashed)
 }
 
 func (s *Store) RevokeSubscription(ctx context.Context, id string) error {
@@ -502,7 +497,7 @@ func (s *Store) RevokeSubscription(ctx context.Context, id string) error {
 
 func (s *Store) RevokeActiveSubscriptionsByUser(ctx context.Context, userID string) (int64, error) {
 	now := time.Now().UTC().Format(time.RFC3339Nano)
-	res, err := s.db.ExecContext(ctx, `UPDATE subscriptions SET status = 'revoked', revoked = 1, revoked_at = ?, updated_at = ? WHERE user_id = ? AND revoked = 0 AND status = 'active'`, now, now, userID)
+	res, err := s.db.ExecContext(ctx, `UPDATE subscriptions SET status = 'revoked', revoked = 1, revoked_at = ?, updated_at = ? WHERE user_id = ? AND revoked = 0`, now, now, userID)
 	if err != nil {
 		return 0, dbErr("revoke_subscriptions_by_user", err)
 	}

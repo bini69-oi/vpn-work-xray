@@ -1,7 +1,11 @@
 # Local build binaries
 vpn-productd
 vpn-productctl
+__pycache__/
+*.pyc
 .dist/
+resources/geoip.dat
+resources/geosite.dat
 
 # Coverage artifacts
 *.cover

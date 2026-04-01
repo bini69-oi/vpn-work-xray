@@ -1,0 +1,10 @@
+[Unit]
+Description=Run vpn-product lifecycle sync daily
+
+[Timer]
+OnCalendar=*-*-* 03:10:00
+Persistent=true
+Unit=vpn-product-lifecycle-daily.service
+
+[Install]
+WantedBy=timers.target

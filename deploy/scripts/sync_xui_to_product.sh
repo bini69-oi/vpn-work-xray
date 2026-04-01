@@ -10,12 +10,11 @@ set -euo pipefail
 #   - /etc/vpn-product/vpn-productd.env with VPN_PRODUCT_API_TOKEN
 #
 # Optional env:
-#   SUB_TOKEN=...                # if set, rewrites subscription profile_ids_json to this profile
+#   SUB_TOKEN=...                # if set, binds subscription to this profile through API
 #   PROFILE_ID=xui-test-vpn      # default profile id in vpn-product
 #   PROFILE_NAME="VPN"           # default profile name
 #   SERVER_IP=<public ip>        # force endpoint address, else autodetect
 #   XUI_DB=/etc/x-ui/x-ui.db
-#   PRODUCT_DB=/var/lib/vpn-product/product.db
 
 if [[ "${EUID}" -ne 0 ]]; then
   echo "Run as root: sudo bash deploy/scripts/sync_xui_to_product.sh"
@@ -23,7 +22,6 @@ if [[ "${EUID}" -ne 0 ]]; then
 fi
 
 XUI_DB="${XUI_DB:-/etc/x-ui/x-ui.db}"
-PRODUCT_DB="${PRODUCT_DB:-/var/lib/vpn-product/product.db}"
 ENV_FILE="${ENV_FILE:-/etc/vpn-product/vpn-productd.env}"
 API_URL="${API_URL:-http://127.0.0.1:8080}"
 PROFILE_ID="${PROFILE_ID:-xui-test-vpn}"
@@ -169,20 +167,17 @@ curl -fsS \
   --data-binary "@${workdir}/profile.json" >/dev/null
 
 if [[ -n "${SUB_TOKEN:-}" ]]; then
-  token_hash="$(printf '%s' "${SUB_TOKEN}" | shasum -a 256 | awk '{print $1}')"
-  profile_ids_json="$(printf '[\"%s\"]' "${PROFILE_ID}")"
-  rows="$(python3 - "${PRODUCT_DB}" "${token_hash}" "${profile_ids_json}" <<'PY'
-import sqlite3, sys, time
-db, token_hash, profile_ids_json = sys.argv[1], sys.argv[2], sys.argv[3]
-con = sqlite3.connect(db)
-cur = con.cursor()
-cur.execute("UPDATE subscriptions SET profile_ids_json=?, updated_at=? WHERE token_hash=?", (profile_ids_json, time.strftime("%Y-%m-%dT%H:%M:%S.000000000Z", time.gmtime()), token_hash))
-con.commit()
-print(cur.rowcount)
+  bind_payload="$(python3 - "${SUB_TOKEN}" "${PROFILE_ID}" <<'PY'
+import json, sys
+print(json.dumps({"token": sys.argv[1], "profileId": sys.argv[2]}))
 PY
 )"
-  if [[ "${rows}" == "0" ]]; then
-    echo "Warning: no subscription row updated for SUB_TOKEN"
+  if ! curl -fsS \
+    -H "Authorization: Bearer ${VPN_PRODUCT_API_TOKEN}" \
+    -H "Content-Type: application/json" \
+    -X POST "${API_URL}/v1/subscriptions/bind-profile" \
+    --data-binary "${bind_payload}" >/dev/null; then
+    echo "Warning: failed to bind SUB_TOKEN via API"
   fi
 fi
 

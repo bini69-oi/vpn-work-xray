@@ -144,6 +144,8 @@ func TestAPIEndpointsFunctionalAndInjectionSafety(t *testing.T) {
 		{name: "profile stats", method: http.MethodGet, path: "/v1/stats/profiles", wantStatus: http.StatusOK},
 		{name: "panel upsert", method: http.MethodPost, path: "/v1/integration/3xui/users/upsert", body: `{"id":"u1","profileId":"p1"}`, wantStatus: http.StatusOK},
 		{name: "panel list", method: http.MethodGet, path: "/v1/integration/3xui/users", wantStatus: http.StatusOK},
+		{name: "panel limit ip get", method: http.MethodGet, path: "/v1/integration/3xui/limit-ip", wantStatus: http.StatusOK},
+		{name: "panel limit ip set", method: http.MethodPost, path: "/v1/integration/3xui/limit-ip", body: `{"limitIp":5,"applyExisting":false}`, wantStatus: http.StatusOK},
 		{name: "health unhealthy", method: http.MethodGet, path: "/v1/health", wantStatus: http.StatusServiceUnavailable},
 		{name: "delivery links", method: http.MethodGet, path: "/v1/delivery/links?profileId=p1", wantStatus: http.StatusOK},
 		{name: "metrics", method: http.MethodGet, path: "/v1/metrics", wantStatus: http.StatusOK},
@@ -401,6 +403,7 @@ func TestAPIValidationAndMethodBranches(t *testing.T) {
 		{name: "quota block invalid payload", method: http.MethodPost, path: "/v1/quota/block", body: `{"profileId":""}`, wantStatus: http.StatusBadRequest},
 		{name: "panel upsert missing fields", method: http.MethodPost, path: "/v1/integration/3xui/users/upsert", body: `{}`, wantStatus: http.StatusBadRequest},
 		{name: "panel users default panel", method: http.MethodGet, path: "/v1/integration/3xui/users?panel=", wantStatus: http.StatusOK},
+		{name: "panel limit ip invalid body", method: http.MethodPost, path: "/v1/integration/3xui/limit-ip", body: "{", wantStatus: http.StatusBadRequest},
 		{name: "profiles delete invalid json", method: http.MethodPost, path: "/v1/profiles/delete", body: "{", wantStatus: http.StatusBadRequest},
 	}
 	for _, tt := range tests {
@@ -449,6 +452,8 @@ func TestAPISuccessAndErrorMixBranches(t *testing.T) {
 		{http.MethodGet, "/v1/stats/profiles", ``, http.StatusOK},
 		{http.MethodPost, "/v1/integration/3xui/users/upsert", `{"id":"u1","profileId":"p1"}`, http.StatusOK},
 		{http.MethodGet, "/v1/integration/3xui/users?panel=3x-ui", ``, http.StatusOK},
+		{http.MethodGet, "/v1/integration/3xui/limit-ip", ``, http.StatusOK},
+		{http.MethodPost, "/v1/integration/3xui/limit-ip", `{"limitIp":4,"applyExisting":false}`, http.StatusOK},
 	}
 
 	for _, tc := range cases {

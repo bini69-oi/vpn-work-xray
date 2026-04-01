@@ -3,6 +3,7 @@ package api
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -208,5 +209,44 @@ func TestApplyTo3XUIValidation(t *testing.T) {
 	rec := httptest.NewRecorder()
 	h.ServeHTTP(rec, req)
 	require.Equal(t, http.StatusBadRequest, rec.Code)
+}
+
+func TestIssueLinkStrictAbortsAndRevokesOnApplyFailure(t *testing.T) {
+	logger, err := logging.New("")
+	require.NoError(t, err)
+	conn := fakeConn{}
+	profiles := fakeProfiles{}
+	diag := diagnostics.NewService(conn, health.StaticProber{Default: health.ProbeResult{Healthy: true}}, profiles, fakeDBChecker{}, t.TempDir())
+	subs := &fakeSubs{item: domain.Subscription{ID: "sub-1", UserID: "u1", Token: "tok-1", ProfileIDs: []string{"p1"}, Status: "active", CreatedAt: time.Now(), UpdatedAt: time.Now()}}
+	h := NewServer(conn, profiles, diag, "token", logger, nil, subs).WithIssueStrict(true).Handler()
+
+	req := httptest.NewRequest(http.MethodPost, "/admin/issue/link", bytes.NewBufferString(`{"userId":"u1"}`))
+	req.Header.Set("Authorization", "Bearer token")
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, req)
+	require.Equal(t, http.StatusServiceUnavailable, rec.Code)
+	require.True(t, subs.item.Revoked)
+}
+
+func TestIssueLinkNonStrictReturnsResponseOnApplyFailure(t *testing.T) {
+	logger, err := logging.New("")
+	require.NoError(t, err)
+	conn := fakeConn{}
+	profiles := fakeProfiles{}
+	diag := diagnostics.NewService(conn, health.StaticProber{Default: health.ProbeResult{Healthy: true}}, profiles, fakeDBChecker{}, t.TempDir())
+	subs := &fakeSubs{item: domain.Subscription{ID: "sub-1", UserID: "u1", Token: "tok-1", ProfileIDs: []string{"p1"}, Status: "active", CreatedAt: time.Now(), UpdatedAt: time.Now()}}
+	h := NewServer(conn, profiles, diag, "token", logger, nil, subs).WithIssueStrict(false).Handler()
+
+	req := httptest.NewRequest(http.MethodPost, "/admin/issue/link", bytes.NewBufferString(`{"userId":"u1"}`))
+	req.Host = "127.0.0.1:8080"
+	req.Header.Set("Authorization", "Bearer token")
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, req)
+	require.Equal(t, http.StatusOK, rec.Code)
+	var out map[string]any
+	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &out))
+	require.Equal(t, false, out["appliedTo3xui"])
+	require.NotEmpty(t, out["applyError"])
+	require.False(t, subs.item.Revoked)
 }
 

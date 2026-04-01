@@ -23,6 +23,13 @@ type Manager struct {
 	tagsCache        *sync.Map
 }
 
+func (m *Manager) resetTagsCacheLocked() {
+	m.tagsCache.Range(func(key, _ any) bool {
+		m.tagsCache.Delete(key)
+		return true
+	})
+}
+
 // New creates a new Manager.
 func New(ctx context.Context, config *proxyman.OutboundConfig) (*Manager, error) {
 	m := &Manager{
@@ -104,7 +111,7 @@ func (m *Manager) AddHandler(ctx context.Context, handler outbound.Handler) erro
 	m.access.Lock()
 	defer m.access.Unlock()
 
-	m.tagsCache = &sync.Map{}
+	m.resetTagsCacheLocked()
 
 	if m.defaultHandler == nil {
 		m.defaultHandler = handler
@@ -135,7 +142,7 @@ func (m *Manager) RemoveHandler(ctx context.Context, tag string) error {
 	m.access.Lock()
 	defer m.access.Unlock()
 
-	m.tagsCache = &sync.Map{}
+	m.resetTagsCacheLocked()
 
 	delete(m.taggedHandler, tag)
 	if m.defaultHandler != nil && m.defaultHandler.Tag() == tag {

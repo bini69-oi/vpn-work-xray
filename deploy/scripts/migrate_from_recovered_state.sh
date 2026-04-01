@@ -46,6 +46,8 @@ VPN_PRODUCT_DATA_DIR=/var/lib/vpn-product
 VPN_PRODUCT_LOG_FILE=/var/log/vpn-product/vpn-productd.log
 VPN_PRODUCT_3XUI_DB_PATH=/etc/x-ui/x-ui.db
 VPN_PRODUCT_3XUI_INBOUND_PORT=8443
+VPN_PRODUCT_PUBLIC_BASE_URL=https://${NEW_IP//./-}.sslip.io
+VPN_PRODUCT_LIMIT_IP=3
 EOF
 
 cat > /etc/caddy/Caddyfile <<EOF
@@ -167,6 +169,10 @@ systemctl enable --now vpn-productd caddy vpn-xui-runtime-sync.timer vpn-xui-cli
 systemctl restart x-ui vpn-productd caddy
 systemctl start vpn-xui-runtime-sync.service vpn-xui-client-limits-sync.service || true
 
-echo "API_TOKEN=${API_TOKEN}"
-echo "ADMIN_TOKEN=${ADMIN_TOKEN}"
+install -m 0600 /dev/null /root/vpn-product-secrets.env
+cat > /root/vpn-product-secrets.env <<EOF
+API_TOKEN=${API_TOKEN}
+ADMIN_TOKEN=${ADMIN_TOKEN}
+EOF
+echo "Credentials saved to /root/vpn-product-secrets.env (mode 0600)"
 systemctl is-active x-ui vpn-productd caddy

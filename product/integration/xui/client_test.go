@@ -59,6 +59,7 @@ CREATE TABLE client_traffics (
 		Email:       "tg_1",
 		UUID:        "11111111-2222-3333-4444-555555555555",
 		Flow:        "xtls-rprx-vision",
+		LimitIP:     3,
 		TotalBytes:  1024,
 		ExpiresAt:   &exp,
 	}); err != nil {
@@ -119,5 +120,71 @@ CREATE TABLE client_traffics (
 	}
 	if inboundTotal != 0 || inboundExpiry != 0 {
 		t.Fatalf("expected inbound limits cleared, got total=%d expiry=%d", inboundTotal, inboundExpiry)
+	}
+}
+
+func TestUpdateAllClientLimitIP(t *testing.T) {
+	dbPath := filepath.Join(t.TempDir(), "xui.db")
+	db, err := sql.Open("sqlite", dbPath)
+	if err != nil {
+		t.Fatalf("open db: %v", err)
+	}
+	defer func() { _ = db.Close() }()
+	_, err = db.Exec(`
+CREATE TABLE inbounds (
+ id INTEGER PRIMARY KEY AUTOINCREMENT,
+ protocol TEXT,
+ port INTEGER,
+ settings TEXT,
+ expiry_time INTEGER DEFAULT 0,
+ total INTEGER DEFAULT 0
+);
+CREATE TABLE client_traffics (
+ id INTEGER PRIMARY KEY AUTOINCREMENT,
+ inbound_id INTEGER,
+ enable numeric,
+ email TEXT,
+ up INTEGER,
+ down INTEGER,
+ all_time INTEGER,
+ expiry_time INTEGER,
+ total INTEGER,
+ reset INTEGER,
+ last_online INTEGER
+);`)
+	if err != nil {
+		t.Fatalf("schema: %v", err)
+	}
+	settings, _ := json.Marshal(map[string]any{
+		"clients": []any{
+			map[string]any{"id": "old", "email": "u1", "limitIp": 0},
+			map[string]any{"id": "old2", "email": "u2"},
+		},
+	})
+	_, err = db.Exec(`INSERT INTO inbounds(protocol, port, settings) VALUES(?, ?, ?)`, "vless", 8443, string(settings))
+	if err != nil {
+		t.Fatalf("seed inbound: %v", err)
+	}
+	changed, err := UpdateAllClientLimitIP(context.Background(), dbPath, 8443, 5)
+	if err != nil {
+		t.Fatalf("update all limit ip: %v", err)
+	}
+	if changed != 2 {
+		t.Fatalf("expected changed=2, got %d", changed)
+	}
+	var settingsOut string
+	if err := db.QueryRow(`SELECT settings FROM inbounds WHERE port = 8443`).Scan(&settingsOut); err != nil {
+		t.Fatalf("query settings: %v", err)
+	}
+	var parsed map[string]any
+	if err := json.Unmarshal([]byte(settingsOut), &parsed); err != nil {
+		t.Fatalf("decode settings: %v", err)
+	}
+	clients, _ := parsed["clients"].([]any)
+	for _, item := range clients {
+		cm, _ := item.(map[string]any)
+		if limitIP, ok := cm["limitIp"].(float64); !ok || int64(limitIP) != 5 {
+			t.Fatalf("expected settings limitIp=5, got %v", cm["limitIp"])
+		}
 	}
 }

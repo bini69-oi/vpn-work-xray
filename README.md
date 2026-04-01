@@ -57,6 +57,7 @@ systemctl restart vpn-productd x-ui caddy
 make test
 make lint
 make cover
+make verify
 ```
 
 ## 6. CI и качество
@@ -66,13 +67,19 @@ make cover
 Рекомендуемый локальный минимум перед push:
 
 ```bash
-make test && make lint
+make verify
 ```
 
 Если нужен более полный прогон:
 
 ```bash
-make test && make lint && make cover
+MIN_COVERAGE=60 make verify
+```
+
+Чтобы проверки запускались автоматически на каждый commit/push:
+
+```bash
+bash scripts/install_git_hooks.sh
 ```
 
 ## 7. Работа с подписками и пользователями

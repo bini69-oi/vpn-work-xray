@@ -2,6 +2,7 @@ package subscription
 
 import (
 	"context"
+	"database/sql"
 	"path/filepath"
 	"testing"
 	"time"
@@ -138,6 +139,35 @@ func TestRotateInvalidatesOldTokenAndUpdatesMetadata(t *testing.T) {
 	content, _, err := s.BuildContentByToken(ctx, rotated.Token)
 	require.NoError(t, err)
 	require.Contains(t, content, "vless://")
+}
+
+func TestBuildContentDeniedForNonActiveStatus(t *testing.T) {
+	ctx := context.Background()
+	dbPath := filepath.Join(t.TempDir(), "subs-status.db")
+	store, err := sqlite.Open(ctx, dbPath)
+	require.NoError(t, err)
+	defer func() { _ = store.Close() }()
+	profiles := profile.NewService(store)
+	_, err = profiles.Save(ctx, domain.Profile{
+		ID: "p1", Name: "good", Enabled: true, RouteMode: domain.RouteModeSplit,
+		Endpoints: []domain.Endpoint{{Name: "v", Address: "example.com", Port: 443, Protocol: domain.ProtocolVLESS, ServerTag: "proxy", UUID: "11111111-2222-3333-4444-555555555555", ServerName: "sni.example.com", RealityPublicKey: "pk", RealityShortID: "ab12"}},
+		PreferredID: "v",
+		ReconnectPolicy: domain.ReconnectPolicy{MaxRetries: 1, BaseBackoff: time.Second, MaxBackoff: 2 * time.Second},
+	})
+	require.NoError(t, err)
+	s := NewService(store, profiles, nil)
+	sub, err := s.Create(ctx, domain.Subscription{Name: "s", UserID: "u", ProfileIDs: []string{"p1"}})
+	require.NoError(t, err)
+
+	rawDB, err := sql.Open("sqlite", dbPath)
+	require.NoError(t, err)
+	defer func() { _ = rawDB.Close() }()
+	_, err = rawDB.ExecContext(ctx, `UPDATE subscriptions SET status = 'paused', revoked = 0 WHERE id = ?`, sub.ID)
+	require.NoError(t, err)
+
+	_, _, err = s.BuildContentByToken(ctx, sub.Token)
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "inactive")
 }
 
 func TestLifecycleByUser(t *testing.T) {

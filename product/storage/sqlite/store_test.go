@@ -416,3 +416,48 @@ func TestSubscriptionUserRevokeAndAssignProfiles(t *testing.T) {
 	require.Equal(t, []string{"new-profile"}, got.ProfileIDs)
 	require.True(t, got.Revoked)
 }
+
+func TestRevokeActiveSubscriptionsByUserRevokesNonActiveStatusesToo(t *testing.T) {
+	ctx := context.Background()
+	store, err := Open(ctx, filepath.Join(t.TempDir(), "subs-user-status.db"))
+	require.NoError(t, err)
+	defer func() { _ = store.Close() }()
+
+	now := time.Now().UTC()
+	_, err = store.CreateSubscription(ctx, domain.Subscription{
+		ID:         "s-active",
+		Name:       "active",
+		UserID:     "u2",
+		Token:      "tok-active",
+		ProfileIDs: []string{"p1"},
+		Status:     "active",
+		CreatedAt:  now,
+		UpdatedAt:  now,
+	})
+	require.NoError(t, err)
+	_, err = store.CreateSubscription(ctx, domain.Subscription{
+		ID:         "s-paused",
+		Name:       "paused",
+		UserID:     "u2",
+		Token:      "tok-paused",
+		ProfileIDs: []string{"p2"},
+		Status:     "paused",
+		CreatedAt:  now,
+		UpdatedAt:  now,
+	})
+	require.NoError(t, err)
+
+	affected, err := store.RevokeActiveSubscriptionsByUser(ctx, "u2")
+	require.NoError(t, err)
+	require.Equal(t, int64(2), affected)
+
+	active, err := store.GetSubscription(ctx, "s-active")
+	require.NoError(t, err)
+	require.True(t, active.Revoked)
+	require.Equal(t, "revoked", active.Status)
+
+	paused, err := store.GetSubscription(ctx, "s-paused")
+	require.NoError(t, err)
+	require.True(t, paused.Revoked)
+	require.Equal(t, "revoked", paused.Status)
+}

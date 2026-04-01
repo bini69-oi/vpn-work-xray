@@ -104,6 +104,10 @@ func (s *Service) BuildContentByToken(ctx context.Context, token string) (string
 	if err != nil {
 		return "", domain.Subscription{}, err
 	}
+	status := strings.ToLower(strings.TrimSpace(sub.Status))
+	if status != "" && status != "active" {
+		return "", domain.Subscription{}, errors.New("subscription inactive")
+	}
 	if sub.Revoked {
 		sub.Status = "revoked"
 		return "", domain.Subscription{}, errors.New("subscription revoked")

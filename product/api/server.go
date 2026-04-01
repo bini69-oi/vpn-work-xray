@@ -69,18 +69,28 @@ type Server struct {
 	apiToken    string
 	adminToken  string
 	adminAllowlist []netip.Prefix
+	trustedProxyCIDRs []netip.Prefix
 	xuiDBPath   string
 	xuiInboundPort int
+	clientLimitIP int64
+	issueStrict int32
 	log         *logging.Logger
 	counter     uint64
 	trafficMu   sync.Mutex
 	rateMu      sync.Mutex
 	rateByIP    map[string]rateEntry
 	publicRateByKey map[string]rateEntry
+	issueMu      sync.Mutex
+	issueByIDKey map[string]cachedIssue
 	lastTraffic map[string]struct {
 		up   int64
 		down int64
 	}
+}
+
+type cachedIssue struct {
+	CreatedAt time.Time
+	Response  v1.IssueLinkResponse
 }
 
 type rateEntry struct {
@@ -101,9 +111,12 @@ func NewServer(connection ConnectionService, profiles ProfileService, diagnostic
 		apiToken:    apiToken,
 		xuiDBPath:   "/etc/x-ui/x-ui.db",
 		xuiInboundPort: 8443,
+		clientLimitIP: 3,
+		issueStrict:  1,
 		log:         logger.WithModule("api"),
 		rateByIP:    map[string]rateEntry{},
 		publicRateByKey: map[string]rateEntry{},
+		issueByIDKey: map[string]cachedIssue{},
 		lastTraffic: map[string]struct {
 			up   int64
 			down int64
@@ -121,6 +134,11 @@ func (s *Server) WithAdminAllowlist(raw string) *Server {
 	return s
 }
 
+func (s *Server) WithTrustedProxyCIDRs(raw string) *Server {
+	s.trustedProxyCIDRs = parseAllowlist(raw)
+	return s
+}
+
 func (s *Server) With3XUI(dbPath string, inboundPort int) *Server {
 	if strings.TrimSpace(dbPath) != "" {
 		s.xuiDBPath = strings.TrimSpace(dbPath)
@@ -128,6 +146,20 @@ func (s *Server) With3XUI(dbPath string, inboundPort int) *Server {
 	if inboundPort > 0 {
 		s.xuiInboundPort = inboundPort
 	}
+	return s
+}
+
+func (s *Server) WithClientLimitIP(limitIP int) *Server {
+	atomic.StoreInt64(&s.clientLimitIP, int64(normalizeClientLimitIP(limitIP)))
+	return s
+}
+
+func (s *Server) WithIssueStrict(strict bool) *Server {
+	if strict {
+		atomic.StoreInt32(&s.issueStrict, 1)
+		return s
+	}
+	atomic.StoreInt32(&s.issueStrict, 0)
 	return s
 }
 
@@ -160,6 +192,7 @@ func (s *Server) Handler() http.Handler {
 	admin.HandleFunc("/v1/stats/profiles", s.handleProfileStats)
 	admin.HandleFunc("/v1/integration/3xui/users/upsert", s.handlePanelUserUpsert)
 	admin.HandleFunc("/v1/integration/3xui/users", s.handlePanelUsersList)
+	admin.HandleFunc("/v1/integration/3xui/limit-ip", s.handle3XUILimitIP)
 	admin.HandleFunc("/v1/health", s.handleHealth)
 	admin.HandleFunc("/v1/readiness", s.handleReadiness)
 	admin.HandleFunc("/v1/delivery/links", s.handleDeliveryLinks)
@@ -168,12 +201,17 @@ func (s *Server) Handler() http.Handler {
 	admin.HandleFunc("/v1/subscriptions/", s.handleSubscriptionScoped)
 	admin.HandleFunc("/v1/issue/link", s.handleIssueLink)
 	admin.HandleFunc("/v1/issue/history", s.handleIssueHistory)
+	admin.HandleFunc("/v1/issue/status", s.handleIssueStatus)
 	admin.HandleFunc("/v1/issue/apply-to-3xui", s.handleIssueApplyTo3XUI)
+	admin.HandleFunc("/v1/subscriptions/bind-profile", s.handleSubscriptionBindProfile)
 	admin.HandleFunc("/v1/subscriptions/lifecycle", s.handleSubscriptionLifecycle)
 	admin.HandleFunc("/admin/issue/link", s.handleIssueLink)
 	admin.HandleFunc("/admin/issue/history", s.handleIssueHistory)
+	admin.HandleFunc("/admin/issue/status", s.handleIssueStatus)
 	admin.HandleFunc("/admin/issue/apply-to-3xui", s.handleIssueApplyTo3XUI)
+	admin.HandleFunc("/admin/subscriptions/bind-profile", s.handleSubscriptionBindProfile)
 	admin.HandleFunc("/admin/subscriptions/lifecycle", s.handleSubscriptionLifecycle)
+	admin.HandleFunc("/admin/integration/3xui/limit-ip", s.handle3XUILimitIP)
 	admin.Handle("/v1/metrics", telemetry.Handler())
 
 	root.HandleFunc("/public/subscriptions/", s.handlePublicSubscription)
@@ -531,6 +569,13 @@ func (s *Server) handleIssueLink(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	userID := strings.TrimSpace(req.UserID)
+	idempotencyKey := strings.TrimSpace(r.Header.Get("X-Idempotency-Key"))
+	if idempotencyKey != "" {
+		if cached, ok := s.getIssueCache(userID + "|" + idempotencyKey); ok {
+			writeJSON(w, http.StatusOK, cached)
+			return
+		}
+	}
 	if userID == "" {
 		writeError(w, http.StatusBadRequest, perrors.New("VPN_SUBS_010", "userId is required"))
 		return
@@ -544,10 +589,25 @@ func (s *Server) handleIssueLink(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, err)
 		return
 	}
+	revokeOnFailure := func(code string, message string, rootErr error) {
+		_ = s.subs.Revoke(r.Context(), item.ID)
+		if rootErr != nil {
+			writeError(w, http.StatusServiceUnavailable, perrors.Wrap(code, message+": "+rootErr.Error(), rootErr))
+			return
+		}
+		writeError(w, http.StatusServiceUnavailable, perrors.New(code, message))
+	}
 	resp := v1.IssueLinkResponse{
 		Subscription: item,
 		URL:          safeSubscriptionURLFromRequest(r, item.Token),
 		Days:         30,
+	}
+	if strings.TrimSpace(resp.URL) == "" {
+		if s.isIssueStrict() {
+			revokeOnFailure("VPN_ISSUE_001", "issue aborted: public subscription URL is not configured", nil)
+			return
+		}
+		resp.ApplyError = "public subscription URL is empty"
 	}
 	profileID, applyErr := s.applySubscriptionTo3XUI(r.Context(), userID, item.ID, "")
 	if applyErr == nil {
@@ -556,8 +616,70 @@ func (s *Server) handleIssueLink(w http.ResponseWriter, r *http.Request) {
 	} else {
 		resp.AppliedTo3XUI = false
 		resp.ApplyError = applyErr.Error()
+		if s.isIssueStrict() {
+			revokeOnFailure("VPN_ISSUE_002", "issue aborted: apply to 3x-ui failed", applyErr)
+			return
+		}
+	}
+	if verifyErr := s.verifyIssuedLink(r.Context(), userID, item.Token); verifyErr != nil {
+		if s.isIssueStrict() {
+			revokeOnFailure("VPN_ISSUE_003", "issue aborted: post-issue verification failed", verifyErr)
+			return
+		}
+		if strings.TrimSpace(resp.ApplyError) == "" {
+			resp.ApplyError = verifyErr.Error()
+		}
+	}
+	if idempotencyKey != "" {
+		s.setIssueCache(userID+"|"+idempotencyKey, resp)
 	}
 	writeJSON(w, http.StatusOK, resp)
+}
+
+func (s *Server) resolveXUIConfig() (string, int) {
+	xuiDBPath := s.xuiDBPath
+	if env := strings.TrimSpace(os.Getenv("VPN_PRODUCT_3XUI_DB_PATH")); env != "" {
+		xuiDBPath = env
+	}
+	xuiInboundPort := s.xuiInboundPort
+	if raw := strings.TrimSpace(os.Getenv("VPN_PRODUCT_3XUI_INBOUND_PORT")); raw != "" {
+		if n, convErr := strconv.Atoi(raw); convErr == nil && n > 0 {
+			xuiInboundPort = n
+		}
+	}
+	return xuiDBPath, xuiInboundPort
+}
+
+func (s *Server) verifyIssuedLink(ctx context.Context, userID string, token string) error {
+	if s.subs == nil {
+		return errors.New("subscriptions are not configured")
+	}
+	content, resolved, err := s.subs.BuildContentByToken(ctx, strings.TrimSpace(token))
+	if err != nil {
+		return err
+	}
+	if strings.TrimSpace(content) == "" {
+		return errors.New("subscription content is empty")
+	}
+	resolvedUserID := strings.TrimSpace(resolved.UserID)
+	if resolvedUserID != "" && resolvedUserID != strings.TrimSpace(userID) {
+		return errors.New("issued token does not belong to requested user")
+	}
+	if resolvedUserID == "" {
+		return nil
+	}
+	xuiDBPath, xuiInboundPort := s.resolveXUIConfig()
+	usage, err := xui.GetClientUsage(ctx, xuiDBPath, xuiInboundPort, resolvedUserID)
+	if err != nil {
+		return err
+	}
+	if !usage.Enable {
+		return errors.New("x-ui client is disabled")
+	}
+	if usage.Total <= 0 {
+		return errors.New("x-ui client total limit is not set")
+	}
+	return nil
 }
 
 func (s *Server) handleIssueHistory(w http.ResponseWriter, r *http.Request) {
@@ -586,6 +708,44 @@ func (s *Server) handleIssueHistory(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, v1.IssueHistoryResponse{Items: items})
+}
+
+func (s *Server) handleIssueStatus(w http.ResponseWriter, r *http.Request) {
+	if s.subs == nil {
+		writeError(w, http.StatusNotImplemented, perrors.New("VPN_SUBS_001", "subscriptions are not configured"))
+		return
+	}
+	if r.Method != http.MethodGet {
+		writeError(w, http.StatusMethodNotAllowed, perrors.New("VPN_API_METHOD_001", "method not allowed"))
+		return
+	}
+	userID := strings.TrimSpace(r.URL.Query().Get("userId"))
+	if userID == "" {
+		writeError(w, http.StatusBadRequest, perrors.New("VPN_SUBS_011", "userId is required"))
+		return
+	}
+	active, err := s.subs.GetActiveByUser(r.Context(), userID)
+	if err != nil {
+		writeError(w, http.StatusNotFound, perrors.New("VPN_SUBS_404", "active subscription not found"))
+		return
+	}
+	status := v1.IssueStatusResponse{
+		UserID:         userID,
+		SubscriptionID: active.ID,
+		Status:         "issued",
+	}
+	xuiDBPath, xuiInboundPort := s.resolveXUIConfig()
+	usage, usageErr := xui.GetClientUsage(r.Context(), xuiDBPath, xuiInboundPort, userID)
+	if usageErr == nil && usage.Enable && usage.Total > 0 {
+		status.AppliedTo3XUI = true
+		status.Status = "verified"
+	} else {
+		status.Status = "issue_pending_apply"
+		if usageErr != nil {
+			status.VerifyError = usageErr.Error()
+		}
+	}
+	writeJSON(w, http.StatusOK, status)
 }
 
 func (s *Server) handleIssueApplyTo3XUI(w http.ResponseWriter, r *http.Request) {
@@ -617,6 +777,42 @@ func (s *Server) handleIssueApplyTo3XUI(w http.ResponseWriter, r *http.Request) 
 		OK:             true,
 		SubscriptionID: subscriptionID,
 		ProfileID:      userProfileID,
+	})
+}
+
+func (s *Server) handleSubscriptionBindProfile(w http.ResponseWriter, r *http.Request) {
+	if s.subs == nil {
+		writeError(w, http.StatusNotImplemented, perrors.New("VPN_SUBS_001", "subscriptions are not configured"))
+		return
+	}
+	if r.Method != http.MethodPost {
+		writeError(w, http.StatusMethodNotAllowed, perrors.New("VPN_API_METHOD_001", "method not allowed"))
+		return
+	}
+	var req v1.BindSubscriptionProfileRequest
+	if err := json.NewDecoder(io.LimitReader(r.Body, 1<<20)).Decode(&req); err != nil {
+		writeError(w, http.StatusBadRequest, perrors.New("VPN_API_BODY_010", "invalid json body"))
+		return
+	}
+	token := strings.TrimSpace(req.Token)
+	profileID := strings.TrimSpace(req.ProfileID)
+	if token == "" || profileID == "" {
+		writeError(w, http.StatusBadRequest, perrors.New("VPN_SUBS_012", "token and profileId are required"))
+		return
+	}
+	_, sub, err := s.subs.BuildContentByToken(r.Context(), token)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err)
+		return
+	}
+	if err := s.subs.AssignProfiles(r.Context(), sub.ID, []string{profileID}); err != nil {
+		writeError(w, http.StatusBadRequest, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, v1.BindSubscriptionProfileResponse{
+		OK:             true,
+		SubscriptionID: sub.ID,
+		ProfileID:      profileID,
 	})
 }
 
@@ -677,12 +873,13 @@ func (s *Server) applySubscriptionTo3XUI(ctx context.Context, userID string, sub
 			xuiInboundPort = n
 		}
 	}
-	if err := xui.UpsertClient(ctx, xui.ClientSpec{
+	if err := s.upsertClientWithRetry(ctx, xui.ClientSpec{
 		DBPath:      xuiDBPath,
 		InboundPort: xuiInboundPort,
 		Email:       strings.TrimSpace(userID),
 		UUID:        userUUID,
 		Flow:        userProfile.Endpoints[0].Flow,
+		LimitIP:     s.currentClientLimitIP(),
 		TotalBytes:  1024 * 1024 * 1024 * 1024,
 		ExpiresAt:   sub.ExpiresAt,
 	}); err != nil {
@@ -698,6 +895,28 @@ func (s *Server) applySubscriptionTo3XUI(ctx context.Context, userID string, sub
 		UpdatedAt:  time.Now().UTC(),
 	})
 	return userProfileID, nil
+}
+
+func (s *Server) upsertClientWithRetry(ctx context.Context, spec xui.ClientSpec) error {
+	var lastErr error
+	backoff := 200 * time.Millisecond
+	for attempt := 0; attempt < 3; attempt++ {
+		if err := xui.UpsertClient(ctx, spec); err == nil {
+			return nil
+		} else {
+			lastErr = err
+		}
+		if attempt == 2 {
+			break
+		}
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case <-time.After(backoff):
+		}
+		backoff *= 2
+	}
+	return lastErr
 }
 
 func (s *Server) handleSubscriptionLifecycle(w http.ResponseWriter, r *http.Request) {
@@ -743,6 +962,7 @@ func (s *Server) handleSubscriptionLifecycle(w http.ResponseWriter, r *http.Requ
 			InboundPort: xuiInboundPort,
 			Email:       userID,
 			Enable:      true,
+			LimitIP:     s.currentClientLimitIP(),
 			TotalBytes:  1024 * 1024 * 1024 * 1024,
 			ExpiresAt:   expires,
 		}); err != nil {
@@ -775,6 +995,7 @@ func (s *Server) handleSubscriptionLifecycle(w http.ResponseWriter, r *http.Requ
 			InboundPort: xuiInboundPort,
 			Email:       userID,
 			Enable:      false,
+			LimitIP:     s.currentClientLimitIP(),
 			TotalBytes:  1024 * 1024 * 1024 * 1024,
 			ExpiresAt:   item.ExpiresAt,
 		}); err != nil {
@@ -1101,6 +1322,60 @@ func (s *Server) handlePanelUsersList(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]any{"items": items})
 }
 
+func normalizeClientLimitIP(raw int) int {
+	if raw <= 0 {
+		return 3
+	}
+	if raw > 64 {
+		return 64
+	}
+	return raw
+}
+
+func (s *Server) currentClientLimitIP() int {
+	return normalizeClientLimitIP(int(atomic.LoadInt64(&s.clientLimitIP)))
+}
+
+func (s *Server) isIssueStrict() bool {
+	return atomic.LoadInt32(&s.issueStrict) == 1
+}
+
+func (s *Server) handle3XUILimitIP(w http.ResponseWriter, r *http.Request) {
+	switch r.Method {
+	case http.MethodGet:
+		writeJSON(w, http.StatusOK, v1.Set3XUILimitIPResponse{
+			OK:      true,
+			LimitIP: s.currentClientLimitIP(),
+		})
+		return
+	case http.MethodPost:
+	default:
+		writeError(w, http.StatusMethodNotAllowed, perrors.New("VPN_API_METHOD_001", "method not allowed"))
+		return
+	}
+	var req v1.Set3XUILimitIPRequest
+	if err := json.NewDecoder(io.LimitReader(r.Body, 1<<20)).Decode(&req); err != nil {
+		writeError(w, http.StatusBadRequest, perrors.New("VPN_API_BODY_012", "invalid json body"))
+		return
+	}
+	limitIP := normalizeClientLimitIP(req.LimitIP)
+	atomic.StoreInt64(&s.clientLimitIP, int64(limitIP))
+	resp := v1.Set3XUILimitIPResponse{
+		OK:      true,
+		LimitIP: limitIP,
+	}
+	if req.ApplyExisting {
+		xuiDBPath, xuiInboundPort := s.resolveXUIConfig()
+		changed, err := xui.UpdateAllClientLimitIP(r.Context(), xuiDBPath, xuiInboundPort, limitIP)
+		if err != nil {
+			writeError(w, http.StatusBadRequest, perrors.Wrap("VPN_3XUI_004", "update x-ui limitIp failed: "+err.Error(), err))
+			return
+		}
+		resp.AppliedCount = changed
+	}
+	writeJSON(w, http.StatusOK, resp)
+}
+
 func (s *Server) handleHealth(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodGet {
 		writeError(w, http.StatusMethodNotAllowed, perrors.New("VPN_API_METHOD_001", "method not allowed"))
@@ -1161,8 +1436,8 @@ func (s *Server) withAuthScope(scope string, next http.Handler) http.Handler {
 			writeError(w, http.StatusUnauthorized, perrors.ErrUnauthorized)
 			return
 		}
-		if scope == "admin" && len(s.adminAllowlist) > 0 {
-			clientIP := requestClientIP(r)
+		if len(s.adminAllowlist) > 0 {
+			clientIP := requestClientIP(r, s.trustedProxyCIDRs)
 			if !ipAllowed(clientIP, s.adminAllowlist) {
 				writeError(w, http.StatusForbidden, perrors.New("VPN_ADMIN_IP_001", "admin ip is not allowed"))
 				return
@@ -1199,14 +1474,21 @@ func parseAllowlist(raw string) []netip.Prefix {
 	return out
 }
 
-func requestClientIP(r *http.Request) string {
+func requestClientIP(r *http.Request, trustedProxyCIDRs []netip.Prefix) string {
+	remote := requestRemoteAddr(r)
+	if len(trustedProxyCIDRs) == 0 {
+		return remote
+	}
+	if !ipAllowed(remote, trustedProxyCIDRs) {
+		return remote
+	}
 	if forwardedFor := strings.TrimSpace(r.Header.Get("X-Forwarded-For")); forwardedFor != "" {
 		first := strings.TrimSpace(strings.Split(forwardedFor, ",")[0])
 		if first != "" {
 			return first
 		}
 	}
-	return requestRemoteAddr(r)
+	return remote
 }
 
 func ipAllowed(ipRaw string, allowlist []netip.Prefix) bool {
@@ -1256,6 +1538,7 @@ func (s *Server) withRateLimit(next http.Handler) http.Handler {
 		ip := requestRemoteAddr(r)
 		now := time.Now().UTC()
 		s.rateMu.Lock()
+		s.compactRateLimitMaps(now, window)
 		entry := s.rateByIP[ip]
 		if entry.WindowStart.IsZero() || now.Sub(entry.WindowStart) >= window {
 			entry = rateEntry{WindowStart: now, Count: 0}
@@ -1286,6 +1569,68 @@ func (s *Server) withRateLimit(next http.Handler) http.Handler {
 		}
 		next.ServeHTTP(w, r)
 	})
+}
+
+func (s *Server) compactRateLimitMaps(now time.Time, window time.Duration) {
+	const maxRateEntries = 4096
+	if len(s.rateByIP) > maxRateEntries {
+		for key, entry := range s.rateByIP {
+			if now.Sub(entry.WindowStart) >= window {
+				delete(s.rateByIP, key)
+			}
+		}
+	}
+	if len(s.publicRateByKey) > maxRateEntries {
+		for key, entry := range s.publicRateByKey {
+			if now.Sub(entry.WindowStart) >= window {
+				delete(s.publicRateByKey, key)
+			}
+		}
+	}
+}
+
+func (s *Server) getIssueCache(key string) (v1.IssueLinkResponse, bool) {
+	s.issueMu.Lock()
+	defer s.issueMu.Unlock()
+	item, ok := s.issueByIDKey[key]
+	if !ok {
+		return v1.IssueLinkResponse{}, false
+	}
+	if time.Since(item.CreatedAt) > 10*time.Minute {
+		delete(s.issueByIDKey, key)
+		return v1.IssueLinkResponse{}, false
+	}
+	return item.Response, true
+}
+
+func (s *Server) setIssueCache(key string, resp v1.IssueLinkResponse) {
+	s.issueMu.Lock()
+	defer s.issueMu.Unlock()
+	s.compactIssueCacheLocked()
+	s.issueByIDKey[key] = cachedIssue{CreatedAt: time.Now().UTC(), Response: resp}
+	s.compactIssueCacheLocked()
+}
+
+func (s *Server) compactIssueCacheLocked() {
+	const (
+		issueTTL        = 10 * time.Minute
+		maxIssueEntries = 4096
+	)
+	now := time.Now().UTC()
+	for k, item := range s.issueByIDKey {
+		if now.Sub(item.CreatedAt) > issueTTL {
+			delete(s.issueByIDKey, k)
+		}
+	}
+	if len(s.issueByIDKey) <= maxIssueEntries {
+		return
+	}
+	for k := range s.issueByIDKey {
+		delete(s.issueByIDKey, k)
+		if len(s.issueByIDKey) <= maxIssueEntries {
+			break
+		}
+	}
 }
 
 type requestIDKey struct{}
