@@ -153,6 +153,12 @@ python3 deploy/scripts/diag_user_sync.py <user_id>
 - Перед деплоем всегда делать backup.
 - После деплоя запускать smoke-проверки.
 
+## DR drill и SLO
+
+- DR rehearsal и шаблон отчета: `DR_DRILL_RUNBOOK.md`
+- SLO/SLI и baseline нагрузочных прогонов: `SLO_BASELINE.md`
+- Базовый baseline: `benchmarks/baseline/current.json`
+
 ## 12. Структура репозитория (кратко)
 
 - `product/` — доменная логика продукта и API.

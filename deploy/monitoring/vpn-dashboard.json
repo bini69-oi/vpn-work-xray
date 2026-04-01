@@ -1,0 +1,50 @@
+{
+  "title": "VPN Product Overview",
+  "timezone": "browser",
+  "schemaVersion": 39,
+  "version": 1,
+  "panels": [
+    {
+      "title": "API 5xx rate",
+      "type": "timeseries",
+      "targets": [
+        {
+          "expr": "sum(rate(vpn_api_5xx_total[5m]))"
+        }
+      ]
+    },
+    {
+      "title": "Issue-link success/failure",
+      "type": "timeseries",
+      "targets": [
+        {
+          "expr": "sum(rate(vpn_subscription_issue_total{result=\"success\"}[5m]))",
+          "legendFormat": "success"
+        },
+        {
+          "expr": "sum(rate(vpn_subscription_issue_total{result=\"failure\"}[5m]))",
+          "legendFormat": "failure"
+        }
+      ]
+    },
+    {
+      "title": "Apply-to-3x-ui latency p95",
+      "type": "timeseries",
+      "targets": [
+        {
+          "expr": "histogram_quantile(0.95, sum(rate(vpn_apply_3xui_latency_seconds_bucket[5m])) by (le))"
+        }
+      ]
+    },
+    {
+      "title": "Sync lag by source",
+      "type": "timeseries",
+      "targets": [
+        {
+          "expr": "vpn_sync_lag_seconds",
+          "legendFormat": "{{sync_name}}"
+        }
+      ]
+    }
+  ]
+}

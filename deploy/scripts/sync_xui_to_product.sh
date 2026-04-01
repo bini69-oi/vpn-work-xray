@@ -26,6 +26,7 @@ ENV_FILE="${ENV_FILE:-/etc/vpn-product/vpn-productd.env}"
 API_URL="${API_URL:-http://127.0.0.1:8080}"
 PROFILE_ID="${PROFILE_ID:-xui-test-vpn}"
 PROFILE_NAME="${PROFILE_NAME:-VPN}"
+STARTED_AT_UNIX="$(date +%s)"
 
 if [[ ! -f "${XUI_DB}" ]]; then
   echo "Missing x-ui db: ${XUI_DB}"
@@ -180,6 +181,17 @@ PY
     echo "Warning: failed to bind SUB_TOKEN via API"
   fi
 fi
+
+heartbeat_payload="$(python3 - "${STARTED_AT_UNIX}" <<'PY'
+import json, sys
+print(json.dumps({"name": "xui_to_product", "startedAtUnix": int(sys.argv[1])}))
+PY
+)"
+curl -fsS \
+  -H "Authorization: Bearer ${VPN_PRODUCT_API_TOKEN}" \
+  -H "Content-Type: application/json" \
+  -X POST "${API_URL}/v1/internal/sync/heartbeat" \
+  --data-binary "${heartbeat_payload}" >/dev/null || true
 
 echo "Synced from 3x-ui to vpn-product."
 echo "Profile: ${PROFILE_ID}"

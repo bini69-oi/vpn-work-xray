@@ -199,6 +199,13 @@ TEST_USER=test_once_user /root/test_ephemeral_user.sh
 - service/timer
 - бинарники/скрипты, нужные для восстановления
 
+## 11.1) DR rehearsal и RTO/RPO
+
+- Полный шаблон репетиции восстановления: `DR_DRILL_RUNBOOK.md`
+- Перед прод-релизом обязателен минимум один rehearsal с фиксацией:
+  - `T0`, `Tbackup`, `Tservice`, `Tbusiness`
+  - расчетом `RTO` и `RPO`
+
 ---
 
 ## 12) Минимальный чек-лист перед удалением старого сервера

@@ -74,9 +74,9 @@ systemctl reload caddy
 
 echo "Done."
 echo "Happ subscription URL:"
-echo "https://${DOMAIN}/public/subscriptions/${SUB_TOKEN}"
+echo "https://${DOMAIN}/public/subscriptions/<redacted>"
 echo
 echo "3x-ui panel:"
 echo "https://${XUI_DOMAIN}${PANEL_BASE_PATH}"
 echo "user=${PANEL_USER}"
-echo "pass=${PANEL_PASS}"
+echo "pass=<redacted>"

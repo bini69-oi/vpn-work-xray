@@ -16,6 +16,8 @@ if [[ -f "${SYNC_ENV}" ]]; then
 fi
 
 XUI_PORT="${XUI_PORT:-8443}"
+API_URL="${API_URL:-http://127.0.0.1:8080}"
+STARTED_AT_UNIX="$(date +%s)"
 
 if [[ ! -f "${XUI_DB}" ]]; then
   echo "Missing x-ui db: ${XUI_DB}"
@@ -23,6 +25,10 @@ if [[ ! -f "${XUI_DB}" ]]; then
 fi
 if [[ ! -f "${PRODUCT_DB}" ]]; then
   echo "Missing product db: ${PRODUCT_DB}"
+  exit 1
+fi
+if [[ -z "${VPN_PRODUCT_API_TOKEN:-}" ]]; then
+  echo "VPN_PRODUCT_API_TOKEN is empty in ${SYNC_ENV}"
   exit 1
 fi
 
@@ -77,3 +83,14 @@ pcon.commit()
 pcon.close()
 print(f"updated_profiles={updated}")
 PY
+
+heartbeat_payload="$(python3 - "${STARTED_AT_UNIX}" <<'PY'
+import json, sys
+print(json.dumps({"name": "xui_usage", "startedAtUnix": int(sys.argv[1])}))
+PY
+)"
+curl -fsS \
+  -H "Authorization: Bearer ${VPN_PRODUCT_API_TOKEN}" \
+  -H "Content-Type: application/json" \
+  -X POST "${API_URL}/v1/internal/sync/heartbeat" \
+  --data-binary "${heartbeat_payload}" >/dev/null || true

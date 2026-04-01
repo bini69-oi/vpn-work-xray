@@ -1,0 +1,30 @@
+{
+  "version": 1,
+  "updated_at": "2026-04-01T00:00:00Z",
+  "scenario": "staging-steady-spike-recovery",
+  "constraints": {
+    "api_p95_ms_max": 200,
+    "api_p99_ms_max": 500,
+    "error_rate_max": 0.005
+  },
+  "baseline": {
+    "steady": {
+      "rps_min": 50,
+      "p95_ms": 120,
+      "p99_ms": 280,
+      "error_rate": 0.001
+    },
+    "spike": {
+      "rps_min": 120,
+      "p95_ms": 190,
+      "p99_ms": 420,
+      "error_rate": 0.003
+    },
+    "recovery": {
+      "rps_min": 60,
+      "p95_ms": 130,
+      "p99_ms": 300,
+      "error_rate": 0.001
+    }
+  }
+}

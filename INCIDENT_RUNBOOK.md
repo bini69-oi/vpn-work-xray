@@ -203,3 +203,12 @@ Expected:
 - services: `active`
 - smoke script: `Smoke checks passed`
 - known subscription: `200`
+
+---
+
+## 7) DR drill capture (RTO/RPO)
+
+Use `DR_DRILL_RUNBOOK.md` to run rehearsal and record:
+- `T0`, `Tbackup`, `Tservice`, `Tbusiness`
+- `RTO = Tbusiness - T0`
+- `RPO = T0 - Tbackup`

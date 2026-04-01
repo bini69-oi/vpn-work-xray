@@ -203,12 +203,14 @@ func (s *Server) Handler() http.Handler {
 	admin.HandleFunc("/v1/issue/history", s.handleIssueHistory)
 	admin.HandleFunc("/v1/issue/status", s.handleIssueStatus)
 	admin.HandleFunc("/v1/issue/apply-to-3xui", s.handleIssueApplyTo3XUI)
+	admin.HandleFunc("/v1/internal/sync/heartbeat", s.handleSyncHeartbeat)
 	admin.HandleFunc("/v1/subscriptions/bind-profile", s.handleSubscriptionBindProfile)
 	admin.HandleFunc("/v1/subscriptions/lifecycle", s.handleSubscriptionLifecycle)
 	admin.HandleFunc("/admin/issue/link", s.handleIssueLink)
 	admin.HandleFunc("/admin/issue/history", s.handleIssueHistory)
 	admin.HandleFunc("/admin/issue/status", s.handleIssueStatus)
 	admin.HandleFunc("/admin/issue/apply-to-3xui", s.handleIssueApplyTo3XUI)
+	admin.HandleFunc("/admin/internal/sync/heartbeat", s.handleSyncHeartbeat)
 	admin.HandleFunc("/admin/subscriptions/bind-profile", s.handleSubscriptionBindProfile)
 	admin.HandleFunc("/admin/subscriptions/lifecycle", s.handleSubscriptionLifecycle)
 	admin.HandleFunc("/admin/integration/3xui/limit-ip", s.handle3XUILimitIP)
@@ -581,11 +583,13 @@ func (s *Server) handleIssueLink(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	profileIDs := req.ProfileIDs
+	telemetry.Default().SubscriptionIssueTotal.WithLabelValues("attempt").Inc()
 	if len(profileIDs) == 0 {
 		profileIDs = []string{"xui-test-vpn"}
 	}
 	item, err := s.subs.IssueLink30Days(r.Context(), userID, profileIDs, strings.TrimSpace(req.Name), strings.TrimSpace(req.Source))
 	if err != nil {
+		telemetry.Default().SubscriptionIssueTotal.WithLabelValues("failure").Inc()
 		writeError(w, http.StatusBadRequest, err)
 		return
 	}
@@ -604,6 +608,7 @@ func (s *Server) handleIssueLink(w http.ResponseWriter, r *http.Request) {
 	}
 	if strings.TrimSpace(resp.URL) == "" {
 		if s.isIssueStrict() {
+			telemetry.Default().SubscriptionIssueTotal.WithLabelValues("failure").Inc()
 			revokeOnFailure("VPN_ISSUE_001", "issue aborted: public subscription URL is not configured", nil)
 			return
 		}
@@ -617,12 +622,14 @@ func (s *Server) handleIssueLink(w http.ResponseWriter, r *http.Request) {
 		resp.AppliedTo3XUI = false
 		resp.ApplyError = applyErr.Error()
 		if s.isIssueStrict() {
+			telemetry.Default().SubscriptionIssueTotal.WithLabelValues("failure").Inc()
 			revokeOnFailure("VPN_ISSUE_002", "issue aborted: apply to 3x-ui failed", applyErr)
 			return
 		}
 	}
 	if verifyErr := s.verifyIssuedLink(r.Context(), userID, item.Token); verifyErr != nil {
 		if s.isIssueStrict() {
+			telemetry.Default().SubscriptionIssueTotal.WithLabelValues("failure").Inc()
 			revokeOnFailure("VPN_ISSUE_003", "issue aborted: post-issue verification failed", verifyErr)
 			return
 		}
@@ -633,6 +640,7 @@ func (s *Server) handleIssueLink(w http.ResponseWriter, r *http.Request) {
 	if idempotencyKey != "" {
 		s.setIssueCache(userID+"|"+idempotencyKey, resp)
 	}
+	telemetry.Default().SubscriptionIssueTotal.WithLabelValues("success").Inc()
 	writeJSON(w, http.StatusOK, resp)
 }
 
@@ -764,20 +772,51 @@ func (s *Server) handleIssueApplyTo3XUI(w http.ResponseWriter, r *http.Request) 
 	}
 	userID := strings.TrimSpace(req.UserID)
 	subscriptionID := strings.TrimSpace(req.SubscriptionID)
+	started := time.Now()
+	telemetry.Default().Apply3XUITotal.WithLabelValues("attempt").Inc()
 	if userID == "" || subscriptionID == "" {
+		telemetry.ObserveApply3XUI("failure", started)
 		writeError(w, http.StatusBadRequest, perrors.New("VPN_SUBS_012", "userId and subscriptionId are required"))
 		return
 	}
 	userProfileID, err := s.applySubscriptionTo3XUI(r.Context(), userID, subscriptionID, req.BaseProfileID)
 	if err != nil {
+		telemetry.ObserveApply3XUI("failure", started)
 		writeError(w, http.StatusBadRequest, err)
 		return
 	}
+	telemetry.ObserveApply3XUI("success", started)
 	writeJSON(w, http.StatusOK, v1.ApplyTo3XUIResponse{
 		OK:             true,
 		SubscriptionID: subscriptionID,
 		ProfileID:      userProfileID,
 	})
+}
+
+func (s *Server) handleSyncHeartbeat(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		writeError(w, http.StatusMethodNotAllowed, perrors.New("VPN_API_METHOD_001", "method not allowed"))
+		return
+	}
+	var req struct {
+		Name         string `json:"name"`
+		StartedAtUnix int64 `json:"startedAtUnix,omitempty"`
+	}
+	if err := json.NewDecoder(io.LimitReader(r.Body, 1<<20)).Decode(&req); err != nil {
+		writeError(w, http.StatusBadRequest, perrors.New("VPN_API_BODY_010", "invalid json body"))
+		return
+	}
+	name := sanitizeID(strings.TrimSpace(req.Name))
+	if name == "" {
+		writeError(w, http.StatusBadRequest, perrors.New("VPN_API_BODY_011", "name is required"))
+		return
+	}
+	lagSeconds := -1.0
+	if req.StartedAtUnix > 0 {
+		lagSeconds = time.Since(time.Unix(req.StartedAtUnix, 0)).Seconds()
+	}
+	telemetry.MarkSyncSuccess(name, lagSeconds)
+	writeJSON(w, http.StatusOK, map[string]any{"ok": true, "name": name})
 }
 
 func (s *Server) handleSubscriptionBindProfile(w http.ResponseWriter, r *http.Request) {
@@ -1525,6 +1564,9 @@ func (s *Server) withObservability(next http.Handler) http.Handler {
 		}
 		safePath := sanitizePathForObservability(r.URL.Path)
 		telemetry.ObserveAPILatency(r.Method, safePath, rec.statusCode, started)
+		if rec.statusCode >= 500 {
+			telemetry.Default().API5xxTotal.WithLabelValues(r.Method, safePath, strconv.Itoa(rec.statusCode)).Inc()
+		}
 		s.log.WithRequestID(requestID).Infof("request method=%s path=%s status=%d remote=%s latency_ms=%d", r.Method, safePath, rec.statusCode, requestRemoteAddr(r), time.Since(started).Milliseconds())
 	})
 }

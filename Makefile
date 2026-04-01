@@ -14,7 +14,7 @@ COVERPKGS ?= ./product/configgen ./product/connection
 LINT_TARGETS ?= ./product/... $(CMD_PKGS)
 ALL_GO_PKGS ?= ./...
 
-.PHONY: test test-all bench lint cover verify ci
+.PHONY: test test-all bench lint cover verify verify-quick secret-scan ci
 
 test:
 	$(GO) test $(PKGS)
@@ -33,7 +33,16 @@ cover:
 	$(GO) test $(COVERPKGS) -coverprofile=coverage.out
 	$(GO) tool cover -html=coverage.out -o coverage.html
 
+secret-scan:
+	python3 scripts/secret_scan.py
+
+verify-quick:
+	$(GO) test $(PKGS)
+	$(GOLANGCI_LINT) run $(LINT_TARGETS)
+	python3 scripts/secret_scan.py
+
 verify:
+	python3 scripts/secret_scan.py
 	$(GO) test $(PKGS)
 	XRAY_LOCATION_ASSET="$(XRAY_LOCATION_ASSET)" bash scripts/prepare_test_assets.sh
 	$(GO) test $(ALL_GO_PKGS)

@@ -94,6 +94,11 @@ sudo bash /opt/vpn-product/src/deploy/scripts/smoke_staging.sh
 
 `/var/lib/vpn-product` (SQLite/data) is not destroyed by rollback.
 
+### DR rehearsal
+
+Before production promotion, run a DR drill and record observed `RTO/RPO`
+using `DR_DRILL_RUNBOOK.md`.
+
 ## 6) Quick Happ + 3x-ui bootstrap (sslip)
 
 Use this after `vpn-productd`, `xray`, and `caddy` are already installed and running:

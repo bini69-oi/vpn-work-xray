@@ -33,7 +33,7 @@ func TestLinuxControllerSetupTUNReturnsError(t *testing.T) {
 	orig := runCommand
 	defer func() { runCommand = orig }()
 
-	runCommand = func(name string, args ...string) error {
+	runCommand = func(_ string, args ...string) error {
 		return errors.New("boom")
 	}
 
