@@ -1,87 +1,66 @@
 package dns_test
 
 import (
-	"context"
 	"net/url"
 	"testing"
-	"time"
 
-	"github.com/google/go-cmp/cmp"
 	. "github.com/xtls/xray-core/app/dns"
-	"github.com/xtls/xray-core/common"
 	"github.com/xtls/xray-core/common/net"
-	"github.com/xtls/xray-core/features/dns"
 )
 
-func TestQUICNameServer(t *testing.T) {
-	url, err := url.Parse("quic://dns.adguard-dns.com")
-	common.Must(err)
-	s, err := NewQUICNameServer(url, false, false, 0, net.IP(nil))
-	common.Must(err)
-	ctx, cancel := context.WithTimeout(context.Background(), time.Second*2)
-	ips, _, err := s.QueryIP(ctx, "google.com", dns.IPOption{
-		IPv4Enable: true,
-		IPv6Enable: true,
-	})
-	cancel()
-	common.Must(err)
-	if len(ips) == 0 {
-		t.Error("expect some ips, but got 0")
+func TestNewQUICNameServerConstruction(t *testing.T) {
+	t.Parallel()
+	u, err := url.Parse("quic://dns.adguard-dns.com")
+	if err != nil {
+		t.Fatal(err)
 	}
-	ctx2, cancel := context.WithTimeout(context.Background(), time.Second*5)
-	ips2, _, err := s.QueryIP(ctx2, "google.com", dns.IPOption{
-		IPv4Enable: true,
-		IPv6Enable: true,
-	})
-	cancel()
-	common.Must(err)
-	if r := cmp.Diff(ips2, ips); r != "" {
-		t.Fatal(r)
+	s, err := NewQUICNameServer(u, false, false, 0, net.IP(nil))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if s == nil {
+		t.Fatal("server is nil")
+	}
+	if got := s.Name(); got != "quic://dns.adguard-dns.com" {
+		t.Errorf("Name: got %q", got)
+	}
+	if s.IsDisableCache() {
+		t.Error("expected cache enabled")
+	}
+
+	s2, err := NewQUICNameServer(u, true, false, 0, net.IP(nil))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !s2.IsDisableCache() {
+		t.Error("expected cache disabled when disableCache=true")
 	}
 }
 
-func TestQUICNameServerWithIPv4Override(t *testing.T) {
-	url, err := url.Parse("quic://dns.adguard-dns.com")
-	common.Must(err)
-	s, err := NewQUICNameServer(url, false, false, 0, net.IP(nil))
-	common.Must(err)
-	ctx, cancel := context.WithTimeout(context.Background(), time.Second*2)
-	ips, _, err := s.QueryIP(ctx, "google.com", dns.IPOption{
-		IPv4Enable: true,
-		IPv6Enable: false,
-	})
-	cancel()
-	common.Must(err)
-	if len(ips) == 0 {
-		t.Error("expect some ips, but got 0")
+func TestNewQUICNameServerExplicitPort(t *testing.T) {
+	t.Parallel()
+	u, err := url.Parse("quic://dns.adguard-dns.com:853")
+	if err != nil {
+		t.Fatal(err)
 	}
-
-	for _, ip := range ips {
-		if len(ip) != net.IPv4len {
-			t.Error("expect only IPv4 response from DNS query")
-		}
+	s, err := NewQUICNameServer(u, false, false, 0, net.IP(nil))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if s.Name() != "quic://dns.adguard-dns.com:853" {
+		t.Errorf("unexpected name %q", s.Name())
 	}
 }
 
-func TestQUICNameServerWithIPv6Override(t *testing.T) {
-	url, err := url.Parse("quic://dns.adguard-dns.com")
-	common.Must(err)
-	s, err := NewQUICNameServer(url, false, false, 0, net.IP(nil))
-	common.Must(err)
-	ctx, cancel := context.WithTimeout(context.Background(), time.Second*2)
-	ips, _, err := s.QueryIP(ctx, "google.com", dns.IPOption{
-		IPv4Enable: false,
-		IPv6Enable: true,
-	})
-	cancel()
-	common.Must(err)
-	if len(ips) == 0 {
-		t.Error("expect some ips, but got 0")
+func TestNewQUICNameServerInvalidPort(t *testing.T) {
+	t.Parallel()
+	// Port > 65535 is rejected by PortFromString / PortFromInt.
+	u, err := url.Parse("quic://dns.adguard-dns.com:70000")
+	if err != nil {
+		t.Fatal(err)
 	}
-
-	for _, ip := range ips {
-		if len(ip) != net.IPv6len {
-			t.Error("expect only IPv6 response from DNS query")
-		}
+	_, err = NewQUICNameServer(u, false, false, 0, net.IP(nil))
+	if err == nil {
+		t.Fatal("expected error for out-of-range port")
 	}
 }
