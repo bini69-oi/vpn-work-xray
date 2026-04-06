@@ -1,0 +1,11 @@
+global:
+  scrape_interval: 15s
+  evaluation_interval: 15s
+
+scrape_configs:
+  - job_name: "vpn-productd"
+    metrics_path: /metrics
+    static_configs:
+      # From Docker Desktop / macOS use host.docker.internal. On Linux, set host IP or add
+      # extra_hosts in docker-compose (see docker-compose.monitoring.yml).
+      - targets: ["host.docker.internal:8080"]

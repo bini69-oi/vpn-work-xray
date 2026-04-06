@@ -1,0 +1,96 @@
+{
+  "annotations": { "list": [] },
+  "editable": true,
+  "fiscalYearStartMonth": 0,
+  "graphTooltip": 0,
+  "id": null,
+  "links": [],
+  "liveNow": false,
+  "panels": [
+    {
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "fieldConfig": { "defaults": {}, "overrides": [] },
+      "gridPos": { "h": 8, "w": 8, "x": 0, "y": 0 },
+      "id": 1,
+      "options": { "displayMode": "gradient", "orientation": "horizontal", "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false }, "showUnfilled": true },
+      "targets": [
+        { "expr": "vpn_product_active_users_total", "legendFormat": "active", "refId": "A" },
+        { "expr": "vpn_product_online_users_total", "legendFormat": "online", "refId": "B" },
+        { "expr": "vpn_product_users_total", "legendFormat": "distinct users", "refId": "C" }
+      ],
+      "title": "Users overview",
+      "type": "bargauge"
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "fieldConfig": { "defaults": {}, "overrides": [] },
+      "gridPos": { "h": 8, "w": 8, "x": 8, "y": 0 },
+      "id": 2,
+      "options": { "displayLabels": ["name", "percent"], "legend": { "displayMode": "table", "placement": "right" }, "pieType": "pie", "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false } },
+      "targets": [{ "expr": "sum by (status) (vpn_product_subscriptions_by_status)", "legendFormat": "{{status}}", "refId": "A" }],
+      "title": "Subscriptions by status",
+      "type": "piechart"
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "fieldConfig": { "defaults": {}, "overrides": [] },
+      "gridPos": { "h": 8, "w": 8, "x": 16, "y": 0 },
+      "id": 3,
+      "options": { "colorMode": "value", "graphMode": "none", "justifyMode": "auto", "orientation": "horizontal", "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false }, "textMode": "auto" },
+      "targets": [
+        { "expr": "vpn_product_subscriptions_expiring_24h", "legendFormat": "expiring 24h", "refId": "A" },
+        { "expr": "vpn_product_server_uptime_seconds", "legendFormat": "uptime s", "refId": "B" },
+        { "expr": "vpn_product_xray_running", "legendFormat": "x-ui active", "refId": "C" }
+      ],
+      "title": "Health",
+      "type": "stat"
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "fieldConfig": { "defaults": { "unit": "Bps" }, "overrides": [] },
+      "gridPos": { "h": 9, "w": 12, "x": 0, "y": 8 },
+      "id": 4,
+      "targets": [
+        { "expr": "rate(vpn_product_traffic_upload_bytes_total[5m])", "legendFormat": "upload/s", "refId": "A" },
+        { "expr": "rate(vpn_product_traffic_download_bytes_total[5m])", "legendFormat": "download/s", "refId": "B" }
+      ],
+      "title": "Traffic rate (DB delta counters)",
+      "type": "timeseries"
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "fieldConfig": { "defaults": {}, "overrides": [] },
+      "gridPos": { "h": 9, "w": 12, "x": 12, "y": 8 },
+      "id": 5,
+      "targets": [
+        { "expr": "histogram_quantile(0.95, sum(rate(vpn_product_api_request_duration_seconds_bucket[5m])) by (le, path))", "legendFormat": "p95 {{path}}", "refId": "A" }
+      ],
+      "title": "API latency p95",
+      "type": "timeseries"
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "fieldConfig": { "defaults": { "unit": "bytes" }, "overrides": [] },
+      "gridPos": { "h": 10, "w": 24, "x": 0, "y": 17 },
+      "id": 6,
+      "options": { "showHeader": true },
+      "targets": [
+        { "expr": "topk(10, vpn_product_user_traffic_upload_bytes)", "format": "table", "instant": true, "legendFormat": "__auto", "refId": "A" }
+      ],
+      "title": "Top upload (instant)",
+      "type": "table"
+    }
+  ],
+  "refresh": "30s",
+  "schemaVersion": 38,
+  "style": "dark",
+  "tags": ["vpn-product"],
+  "templating": { "list": [] },
+  "time": { "from": "now-24h", "to": "now" },
+  "timepicker": {},
+  "timezone": "",
+  "title": "VPN Product",
+  "uid": "vpn-product",
+  "version": 1,
+  "weekStart": ""
+}

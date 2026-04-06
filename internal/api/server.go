@@ -25,6 +25,7 @@ import (
 	perrors "github.com/xtls/xray-core/internal/errors"
 	"github.com/xtls/xray-core/internal/integration/xui"
 	"github.com/xtls/xray-core/internal/logging"
+	"github.com/xtls/xray-core/internal/metrics"
 	"github.com/xtls/xray-core/internal/telemetry"
 )
 
@@ -86,6 +87,7 @@ type Server struct {
 		up   int64
 		down int64
 	}
+	exposePublicMetrics bool
 }
 
 type cachedIssue struct {
@@ -163,8 +165,17 @@ func (s *Server) WithIssueStrict(strict bool) *Server {
 	return s
 }
 
+// WithPublicMetrics registers an unauthenticated /metrics handler on the root mux (Prometheus scrape).
+func (s *Server) WithPublicMetrics(v bool) *Server {
+	s.exposePublicMetrics = v
+	return s
+}
+
 func (s *Server) Handler() http.Handler {
 	root := http.NewServeMux()
+	if s.exposePublicMetrics {
+		root.Handle("/metrics", metrics.Handler())
+	}
 	admin := http.NewServeMux()
 	// New production-oriented admin contract.
 	admin.HandleFunc("/admin/profiles", s.handleProfiles)
@@ -204,6 +215,7 @@ func (s *Server) Handler() http.Handler {
 	admin.HandleFunc("/v1/issue/status", s.handleIssueStatus)
 	admin.HandleFunc("/v1/issue/apply-to-3xui", s.handleIssueApplyTo3XUI)
 	admin.HandleFunc("/v1/internal/sync/heartbeat", s.handleSyncHeartbeat)
+	admin.HandleFunc("/v1/internal/sync/failure", s.handleSyncFailure)
 	admin.HandleFunc("/v1/subscriptions/bind-profile", s.handleSubscriptionBindProfile)
 	admin.HandleFunc("/v1/subscriptions/lifecycle", s.handleSubscriptionLifecycle)
 	admin.HandleFunc("/admin/issue/link", s.handleIssueLink)
@@ -211,6 +223,7 @@ func (s *Server) Handler() http.Handler {
 	admin.HandleFunc("/admin/issue/status", s.handleIssueStatus)
 	admin.HandleFunc("/admin/issue/apply-to-3xui", s.handleIssueApplyTo3XUI)
 	admin.HandleFunc("/admin/internal/sync/heartbeat", s.handleSyncHeartbeat)
+	admin.HandleFunc("/admin/internal/sync/failure", s.handleSyncFailure)
 	admin.HandleFunc("/admin/subscriptions/bind-profile", s.handleSubscriptionBindProfile)
 	admin.HandleFunc("/admin/subscriptions/lifecycle", s.handleSubscriptionLifecycle)
 	admin.HandleFunc("/admin/integration/3xui/limit-ip", s.handle3XUILimitIP)
@@ -790,6 +803,7 @@ func (s *Server) handleIssueApplyTo3XUI(w http.ResponseWriter, r *http.Request) 
 	}
 	userProfileID, err := s.applySubscriptionTo3XUI(r.Context(), userID, subscriptionID, req.BaseProfileID)
 	if err != nil {
+		metrics.RecordXUIIntegrationError(err)
 		telemetry.ObserveApply3XUI("failure", started)
 		writeError(w, http.StatusBadRequest, err)
 		return
@@ -825,6 +839,28 @@ func (s *Server) handleSyncHeartbeat(w http.ResponseWriter, r *http.Request) {
 		lagSeconds = time.Since(time.Unix(req.StartedAtUnix, 0)).Seconds()
 	}
 	telemetry.MarkSyncSuccess(name, lagSeconds)
+	metrics.SetXUISyncLastSuccess(float64(time.Now().UTC().Unix()))
+	writeJSON(w, http.StatusOK, map[string]any{"ok": true, "name": name})
+}
+
+func (s *Server) handleSyncFailure(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		writeError(w, http.StatusMethodNotAllowed, perrors.New("VPN_API_METHOD_001", "method not allowed"))
+		return
+	}
+	var req struct {
+		Name string `json:"name"`
+	}
+	if err := json.NewDecoder(io.LimitReader(r.Body, 1<<20)).Decode(&req); err != nil {
+		writeError(w, http.StatusBadRequest, perrors.New("VPN_API_BODY_010", "invalid json body"))
+		return
+	}
+	name := sanitizeID(strings.TrimSpace(req.Name))
+	if name == "" {
+		writeError(w, http.StatusBadRequest, perrors.New("VPN_API_BODY_011", "name is required"))
+		return
+	}
+	metrics.RecordExternalSyncFailure()
 	writeJSON(w, http.StatusOK, map[string]any{"ok": true, "name": name})
 }
 
@@ -1014,7 +1050,9 @@ func (s *Server) handleSubscriptionLifecycle(w http.ResponseWriter, r *http.Requ
 			TotalBytes:  1024 * 1024 * 1024 * 1024,
 			ExpiresAt:   expires,
 		}); err != nil {
-			writeError(w, http.StatusBadRequest, perrors.Wrap("VPN_3XUI_002", "renew in 3x-ui failed: "+err.Error(), err))
+			wrapErr := perrors.Wrap("VPN_3XUI_002", "renew in 3x-ui failed: "+err.Error(), err)
+			metrics.RecordXUIIntegrationError(wrapErr)
+			writeError(w, http.StatusBadRequest, wrapErr)
 			return
 		}
 		if len(item.ProfileIDs) > 0 {
@@ -1047,7 +1085,9 @@ func (s *Server) handleSubscriptionLifecycle(w http.ResponseWriter, r *http.Requ
 			TotalBytes:  1024 * 1024 * 1024 * 1024,
 			ExpiresAt:   item.ExpiresAt,
 		}); err != nil {
-			writeError(w, http.StatusBadRequest, perrors.Wrap("VPN_3XUI_003", "block in 3x-ui failed: "+err.Error(), err))
+			wrapErr := perrors.Wrap("VPN_3XUI_003", "block in 3x-ui failed: "+err.Error(), err)
+			metrics.RecordXUIIntegrationError(wrapErr)
+			writeError(w, http.StatusBadRequest, wrapErr)
 			return
 		}
 		if len(item.ProfileIDs) > 0 {
@@ -1416,7 +1456,9 @@ func (s *Server) handle3XUILimitIP(w http.ResponseWriter, r *http.Request) {
 		xuiDBPath, xuiInboundPort := s.resolveXUIConfig()
 		changed, err := xui.UpdateAllClientLimitIP(r.Context(), xuiDBPath, xuiInboundPort, limitIP)
 		if err != nil {
-			writeError(w, http.StatusBadRequest, perrors.Wrap("VPN_3XUI_004", "update x-ui limitIp failed: "+err.Error(), err))
+			wrapErr := perrors.Wrap("VPN_3XUI_004", "update x-ui limitIp failed: "+err.Error(), err)
+			metrics.RecordXUIIntegrationError(wrapErr)
+			writeError(w, http.StatusBadRequest, wrapErr)
 			return
 		}
 		resp.AppliedCount = changed
@@ -1556,6 +1598,10 @@ func (s *Server) withObservability(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		requestID := s.nextRequestID()
 		ctx := context.WithValue(r.Context(), requestIDKey{}, requestID)
+		if r.URL.Path == "/metrics" {
+			next.ServeHTTP(w, r.WithContext(ctx))
+			return
+		}
 		started := time.Now()
 		rec := &responseRecorder{ResponseWriter: w, statusCode: http.StatusOK}
 		next.ServeHTTP(rec, r.WithContext(ctx))
@@ -1573,6 +1619,7 @@ func (s *Server) withObservability(next http.Handler) http.Handler {
 		}
 		safePath := sanitizePathForObservability(r.URL.Path)
 		telemetry.ObserveAPILatency(r.Method, safePath, rec.statusCode, started)
+		metrics.RecordAPIRequest(r.Method, safePath, rec.statusCode, time.Since(started))
 		if rec.statusCode >= 500 {
 			telemetry.Default().API5xxTotal.WithLabelValues(r.Method, safePath, strconv.Itoa(rec.statusCode)).Inc()
 		}
@@ -1586,6 +1633,10 @@ func (s *Server) withRateLimit(next http.Handler) http.Handler {
 		limit  = 120
 	)
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/metrics" {
+			next.ServeHTTP(w, r)
+			return
+		}
 		ip := requestRemoteAddr(r)
 		now := time.Now().UTC()
 		s.rateMu.Lock()

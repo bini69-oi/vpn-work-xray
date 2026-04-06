@@ -32,6 +32,15 @@ if [[ -z "${VPN_PRODUCT_API_TOKEN:-}" ]]; then
   exit 1
 fi
 
+sync_notify_failure() {
+  curl -fsS \
+    -H "Authorization: Bearer ${VPN_PRODUCT_API_TOKEN}" \
+    -H "Content-Type: application/json" \
+    -X POST "${API_URL}/v1/internal/sync/failure" \
+    --data-binary '{"name":"xui_usage"}' >/dev/null 2>&1 || true
+}
+trap 'sync_notify_failure' ERR
+
 python3 - "${XUI_DB}" "${PRODUCT_DB}" "${XUI_PORT}" <<'PY'
 import sqlite3, sys, json, re, time
 xui_db, product_db, port = sys.argv[1], sys.argv[2], int(sys.argv[3])

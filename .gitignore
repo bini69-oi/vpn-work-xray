@@ -1,6 +1,6 @@
-# Local build binaries
-vpn-productd
-vpn-productctl
+# Local build binaries (only repo root; do not ignore cmd/vpn-productd/*.go)
+/vpn-productd
+/vpn-productctl
 __pycache__/
 *.pyc
 .dist/

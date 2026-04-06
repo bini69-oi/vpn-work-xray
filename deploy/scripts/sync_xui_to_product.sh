@@ -44,6 +44,15 @@ if [[ -z "${VPN_PRODUCT_API_TOKEN:-}" ]]; then
   exit 1
 fi
 
+sync_notify_failure() {
+  curl -fsS \
+    -H "Authorization: Bearer ${VPN_PRODUCT_API_TOKEN}" \
+    -H "Content-Type: application/json" \
+    -X POST "${API_URL}/v1/internal/sync/failure" \
+    --data-binary '{"name":"xui_to_product"}' >/dev/null 2>&1 || true
+}
+trap 'sync_notify_failure' ERR
+
 workdir="$(mktemp -d)"
 trap 'rm -rf "${workdir}"' EXIT
 
