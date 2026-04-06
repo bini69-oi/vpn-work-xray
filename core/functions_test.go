@@ -15,8 +15,8 @@ import (
 	"github.com/xtls/xray-core/common/serial"
 	core "github.com/xtls/xray-core/core"
 	"github.com/xtls/xray-core/proxy/freedom"
-	"github.com/xtls/xray-core/testing/servers/tcp"
-	"github.com/xtls/xray-core/testing/servers/udp"
+	"github.com/xtls/xray-core/tests/integration/servers/tcp"
+	"github.com/xtls/xray-core/tests/integration/servers/udp"
 	"google.golang.org/protobuf/proto"
 )
 

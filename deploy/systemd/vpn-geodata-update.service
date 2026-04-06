@@ -1,0 +1,10 @@
+[Unit]
+Description=Update Xray geoip/geosite.dat (Loyalsoldier)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+EnvironmentFile=-/etc/vpn-product/geodata.env
+ExecStart=/opt/vpn-product/src/deploy/scripts/update_geodata.sh
+Nice=10

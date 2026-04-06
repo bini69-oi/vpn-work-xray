@@ -19,7 +19,7 @@ import (
 	"github.com/xtls/xray-core/core"
 	feature_dns "github.com/xtls/xray-core/features/dns"
 	"github.com/xtls/xray-core/proxy/freedom"
-	"github.com/xtls/xray-core/testing/servers/udp"
+	"github.com/xtls/xray-core/tests/integration/servers/udp"
 )
 
 type staticHandler struct{}

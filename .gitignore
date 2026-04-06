@@ -7,8 +7,53 @@ __pycache__/
 resources/geoip.dat
 resources/geosite.dat
 
-# Coverage artifacts
+# OS
+.DS_Store
+Thumbs.db
+
+# IDE
+.cursor/
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# Go
+/bin/
+/dist/
+*.exe
+*.test
+*.out
+coverage.out
+coverage.html
 *.cover
+
+# Env и секреты
+.env
+*.env.local
+*.pem
+warp.env
+
+# Базы данных (локальные копии)
+*.db
+!deploy/migrations/*.sql
+
+# Docker
+docker-compose.override.yml
+
+# Бэкапы
+*.bak
+*.backup
+*.tar.gz
+
+# Python (telegram-bot)
+__pycache__/
+*.pyc
+.venv/
+venv/
+
+# Coverage artifacts
 coverage.out
 coverage.html
 
@@ -18,3 +63,5 @@ deploy/backups/
 # Temporary downloaded assets in local var environments
 var/**/assets/*.tmp
 
+# Telegram bot local secrets
+telegram-bot/.env

@@ -19,8 +19,8 @@ import (
 	"github.com/xtls/xray-core/core"
 	dns_proxy "github.com/xtls/xray-core/proxy/dns"
 	"github.com/xtls/xray-core/proxy/dokodemo"
-	"github.com/xtls/xray-core/testing/servers/tcp"
-	"github.com/xtls/xray-core/testing/servers/udp"
+	"github.com/xtls/xray-core/tests/integration/servers/tcp"
+	"github.com/xtls/xray-core/tests/integration/servers/udp"
 )
 
 type staticHandler struct{}

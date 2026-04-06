@@ -7,7 +7,7 @@ import (
 
 	. "github.com/xtls/xray-core/common/buf"
 	"github.com/xtls/xray-core/common/net"
-	"github.com/xtls/xray-core/testing/servers/tcp"
+	"github.com/xtls/xray-core/tests/integration/servers/tcp"
 )
 
 func TestWriterCreation(t *testing.T) {

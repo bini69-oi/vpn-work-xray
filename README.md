@@ -1,172 +1,138 @@
-# VPN Product — руководство по проекту
+<div align="center">
 
-Этот репозиторий содержит VPN-продукт поверх `xray-core`: API-сервис, управление профилями, синхронизацию с `3x-ui`, диагностику и скрипты деплоя.
+# VPN Product
 
-Документ ниже объясняет, что входит в систему, как она работает и как ее запускать/обслуживать.
+**Высокопроизводительный VPN-сервис на базе Xray-core**
 
-## 1. Что входит в продукт
+Управление подписками • Интеграция с 3x-ui • Telegram-бот • Маршрутизация и WARP
 
-- `vpn-productd` — API-слой продукта (подписки, профили, лимиты, служебные операции).
-- `xray-core` — сетевой движок и runtime.
-- `3x-ui` — панель и хранение клиентских записей.
-- `caddy` — внешний HTTPS reverse proxy.
-- `sqlite` — локальное хранилище состояния продукта (`product.db`).
+[![Go](https://img.shields.io/badge/Go-1.26-00ADD8?style=flat-square&logo=go)](https://go.dev)
+[![Xray](https://img.shields.io/badge/Xray--core-fork-blue?style=flat-square)](https://github.com/XTLS/Xray-core)
+[![License](https://img.shields.io/badge/License-MPL--2.0-green?style=flat-square)](LICENSE)
+[![CI](https://img.shields.io/github/actions/workflow/status/bini69-oi/vpn-work-xray/ci.yml?style=flat-square&label=CI)](https://github.com/bini69-oi/vpn-work-xray/actions)
 
-## 2. Архитектура на высоком уровне
+</div>
 
-1. Клиент обращается к API `vpn-productd`.
-2. API работает с профилями/подписками в `product.db`.
-3. При необходимости профиль синхронизируется в `3x-ui`.
-4. Генерируется runtime-конфиг для Xray.
-5. Xray применяет конфигурацию и обслуживает трафик.
+---
 
-Сопутствующие таймеры (systemd) поддерживают регулярный sync и служебные задачи.
+## Что это
 
-## 3. Важные пути на сервере
+VPN Product — слой вокруг [Xray-core](https://github.com/XTLS/Xray-core): API (`vpn-productd`), SQLite, интеграция с [3x-ui](https://github.com/MHSanaei/3x-ui), скрипты деплоя и опционально Telegram-бот.
 
-- `/etc/vpn-product/vpn-productd.env` — переменные окружения API.
-- `/var/lib/vpn-product/product.db` — база продукта.
-- `/etc/x-ui/x-ui.db` — база `3x-ui`.
-- `/usr/local/x-ui/bin/config.json` — runtime-конфиг `x-ui/xray`.
-- `/etc/caddy/Caddyfile` — публичный reverse proxy.
+Исходники самого ядра Xray лежат в корне репозитория (`app/`, `common/`, `core/`, `proxy/`, `transport/`, …) с тем же модулем Go `github.com/xtls/xray-core` — **мы не переносим их в подпапку `xray/`**, чтобы не ломать импорты. Код продукта — в **`internal/`**.
 
-## 4. Основные сервисы
+### Ключевые возможности
 
-Проверка:
+- **Протоколы** — наследуются от Xray (VLESS/REALITY, VMess, Trojan, Shadowsocks, WireGuard и др.)
+- **Профили и подписки** — REST API, лимиты, выдача subscription links
+- **3x-ui** — синхронизация пользователей и лимитов
+- **Маршрутизация** — пресеты RU + WARP, geo-данные, правила в JSON ([docs/API.md](docs/API.md))
+- **Деплой** — systemd, скрипты в `deploy/scripts/`, пример Caddy: [deploy/caddy/Caddyfile.example](deploy/caddy/Caddyfile.example)
 
-```bash
-systemctl is-active vpn-productd x-ui caddy
+---
+
+## Архитектура
+
+См. подробнее [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
+
+```
+┌──────────────┐     ┌──────────────────┐     ┌────────────┐
+│  Telegram    │────▶│   vpn-productd   │────▶│   3x-ui    │
+│     Bot      │     │   (Go API)       │     │  (панель)  │
+└──────────────┘     └────────┬─────────┘     └─────┬──────┘
+                              │                     │
+                     ┌────────▼─────────┐     ┌─────▼──────┐
+                     │   product.db     │     │  Xray-core │
+                     │   (SQLite)       │     │  (трафик)  │
+                     └──────────────────┘     └────────────┘
 ```
 
-Перезапуск:
+**Поток данных (упрощённо):**
+
+1. Клиент или бот обращается к API `vpn-productd`.
+2. Состояние подписок и профилей хранится в SQLite (`VPN_PRODUCT_DATA_DIR`).
+3. При необходимости выполняется синхронизация с 3x-ui.
+4. Пользовательский VPN-трафик обрабатывает Xray на сервере (конфигурация панели), а не сам `vpn-productd`.
+
+---
+
+## Быстрый старт (разработка)
+
+### Требования
+
+- Go 1.26+ (см. `go.mod`)
+- `golangci-lint` для `make lint`
+
+### Сборка и проверки
 
 ```bash
-systemctl restart vpn-productd x-ui caddy
-```
+git clone https://github.com/bini69-oi/vpn-work-xray.git
+cd vpn-work-xray
 
-## 5. Быстрый старт для разработки
-
-Требования:
-
-- Go (актуальная версия из `go.mod`)
-- `golangci-lint` (или запуск через `make lint`)
-
-Проверки:
-
-```bash
+make build          # бинарники vpn-productd, vpn-productctl в корне репозитория
 make test
 make lint
-make cover
-make verify
+make verify-quick   # тесты product + линтер + secret-scan
+make verify         # полный прогон включая все пакеты xray-core (долго)
 ```
 
-## 6. CI и качество
+Конфигурация для сервера: скопируйте [deploy/env/vpn-productd.env.example](deploy/env/vpn-productd.env.example) в `/etc/vpn-product/vpn-productd.env` и задайте токены.
 
-В проекте используется workflow CI и цели `Makefile`.
+---
 
-Рекомендуемый локальный минимум перед push:
+## Конфигурация
 
-```bash
-make verify
-```
+Основные переменные (полный список — в [deploy/env/vpn-productd.env.example](deploy/env/vpn-productd.env.example) и [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md)):
 
-Если нужен более полный прогон:
+| Переменная | Описание |
+|------------|----------|
+| `VPN_PRODUCT_API_TOKEN` | Bearer-токен для `/v1/` и `/api/v1/` |
+| `VPN_PRODUCT_LISTEN` | Адрес прослушивания API (например `127.0.0.1:8080`) |
+| `VPN_PRODUCT_DATA_DIR` | Каталог данных и `product.db` |
+| `VPN_PRODUCT_ROUTING_PRESET` | Пусто или `ru_warp` для пресета маршрутизации |
+| `WARP_MODE` | `wireguard` или `socks` для outbound WARP |
 
-```bash
-MIN_COVERAGE=60 make verify
-```
+Примеры JSON: [configs/](configs/).
 
-Чтобы проверки запускались автоматически на каждый commit/push:
+---
 
-```bash
-bash scripts/install_git_hooks.sh
-```
+## API
 
-## 7. Работа с подписками и пользователями
+Документация: [docs/API.md](docs/API.md)
 
-Типовой сценарий:
+Публичные и админ-маршруты описаны там же (в т.ч. `/api/v1/routing/*`).
 
-1. Создать/обновить подписку через API.
-2. Проверить запись в `product.db`.
-3. Проверить, что пользователь присутствует в `x-ui`.
-4. Убедиться, что runtime-конфиг актуален.
+---
 
-Полезные скрипты в `deploy/scripts/`:
+## Структура репозитория
 
-- `sync_xui_to_product.sh`
-- `sync_xui_usage_to_product.sh`
-- `verify_user_limits.py`
-- `cleanup_users.py`
-- `test_ephemeral_user.sh`
+| Путь | Назначение |
+|------|------------|
+| `cmd/vpn-productd`, `cmd/vpn-productctl` | Точки входа продукта |
+| `internal/` | API, конфигген, профили, подписки, SQLite, routing, … |
+| `app/`, `common/`, `core/`, `features/`, `infra/`, `proxy/`, `transport/`, `main/` | Исходники Xray-core (upstream layout) |
+| `tests/integration/` | Интеграционные тесты сценариев (ранее `testing/`) |
+| `deploy/` | systemd, скрипты, env-примеры, Caddy |
+| `docs/` | API, деплой, runbooks |
+| `configs/` | Примеры конфигов |
+| `telegram-bot/` | Опциональный бот (Python) |
 
-## 8. Миграции и восстановление
+---
 
-Для экспорта/импорта состояния используются:
+## Документация
 
-- `deploy/scripts/export_server_state.sh`
-- `deploy/scripts/import_server_state.sh`
-- `deploy/scripts/migrate_from_recovered_state.sh`
+| Документ | Описание |
+|----------|----------|
+| [docs/API.md](docs/API.md) | REST API |
+| [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md) | Деплой и эксплуатация |
+| [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) | Архитектура |
+| [docs/DR_RUNBOOK.md](docs/DR_RUNBOOK.md) | Disaster recovery |
+| [docs/SLO.md](docs/SLO.md) | SLO / baseline |
+| [docs/INCIDENT_RUNBOOK.md](docs/INCIDENT_RUNBOOK.md) | Инциденты |
+| [docs/CONTRIBUTING.md](docs/CONTRIBUTING.md) | Вклад в проект |
 
-Во время миграции обязательно указывать целевой IP явно:
+---
 
-```bash
-bash deploy/scripts/migrate_from_recovered_state.sh <new_ip>
-```
+## Лицензия
 
-## 9. Ежедневные резервные копии
-
-В ветке продукта добавлены systemd-юниты для ежедневного backup в `00:00`.
-
-Установка:
-
-```bash
-sudo bash deploy/scripts/install_backup_timer.sh
-```
-
-Проверка:
-
-```bash
-systemctl status vpn-product-backup.timer --no-pager
-systemctl status vpn-product-backup.service --no-pager
-ls -lah /var/backups/vpn-product
-```
-
-По умолчанию:
-
-- архив + `.sha256` создаются автоматически;
-- старые копии удаляются по retention (14 дней).
-
-## 10. Диагностика и отладка
-
-Для точечной проверки пользователя:
-
-```bash
-python3 deploy/scripts/diag_user_sync.py <user_id>
-```
-
-Если `user_id` не передан, используется безопасное тестовое значение.
-
-## 11. Практические рекомендации
-
-- Не коммитить персональные данные и реальные production-IP.
-- Не хранить секреты в репозитории.
-- Перед деплоем всегда делать backup.
-- После деплоя запускать smoke-проверки.
-
-## DR drill и SLO
-
-- DR rehearsal и шаблон отчета: `DR_DRILL_RUNBOOK.md`
-- SLO/SLI и baseline нагрузочных прогонов: `SLO_BASELINE.md`
-- Базовый baseline: `benchmarks/baseline/current.json`
-
-## 12. Структура репозитория (кратко)
-
-- `product/` — доменная логика продукта и API.
-- `deploy/` — systemd-юниты, env-файлы, операционные скрипты.
-- `app/`, `core/`, `proxy/`, `transport/`, `features/` — компоненты `xray-core`.
-- `testing/` — интеграционные и сценарные тесты.
-
-## 13. Лицензия и источник ядра
-
-Проект основан на `xray-core` и сохраняет совместимость с исходной архитектурой ядра.
-Подробности по лицензии смотри в файле `LICENSE`.
+[MPL-2.0](LICENSE). Проект основан на [Xray-core](https://github.com/XTLS/Xray-core).

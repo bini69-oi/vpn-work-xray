@@ -1,0 +1,16 @@
+{
+  "domainStrategy": "IPIfNonMatch",
+  "domainMatcher": "hybrid",
+  "rules": [
+    {
+      "type": "field",
+      "outboundTag": "direct",
+      "domain": ["geosite:private"]
+    },
+    {
+      "type": "field",
+      "port": "0-65535",
+      "outboundTag": "proxy"
+    }
+  ]
+}

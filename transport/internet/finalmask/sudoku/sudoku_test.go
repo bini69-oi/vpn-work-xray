@@ -36,7 +36,7 @@ import (
 	"github.com/xtls/xray-core/proxy/vless"
 	vin "github.com/xtls/xray-core/proxy/vless/inbound"
 	vout "github.com/xtls/xray-core/proxy/vless/outbound"
-	testingtcp "github.com/xtls/xray-core/testing/servers/tcp"
+	testingtcp "github.com/xtls/xray-core/tests/integration/servers/tcp"
 	"github.com/xtls/xray-core/transport/internet"
 	hytransport "github.com/xtls/xray-core/transport/internet/hysteria"
 	"github.com/xtls/xray-core/transport/internet/reality"

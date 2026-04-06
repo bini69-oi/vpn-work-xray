@@ -24,7 +24,7 @@ chown -R vpn-product:vpn-product /var/lib/vpn-product /var/log/vpn-product
 echo "Building binaries from ${PROJECT_DIR}"
 cd "${PROJECT_DIR}"
 go test ./cmd/vpn-productd ./cmd/vpn-productctl >/dev/null
-go test ./product/... >/dev/null
+go test ./internal/... >/dev/null
 go build -o "${RELEASE_DIR}/bin/vpn-productd" ./cmd/vpn-productd
 go build -o "${RELEASE_DIR}/bin/vpn-productctl" ./cmd/vpn-productctl
 

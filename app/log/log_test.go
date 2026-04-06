@@ -9,7 +9,7 @@ import (
 	"github.com/xtls/xray-core/app/log"
 	"github.com/xtls/xray-core/common"
 	clog "github.com/xtls/xray-core/common/log"
-	"github.com/xtls/xray-core/testing/mocks"
+	"github.com/xtls/xray-core/tests/integration/mocks"
 )
 
 func TestCustomLogHandler(t *testing.T) {

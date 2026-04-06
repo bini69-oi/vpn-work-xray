@@ -1,0 +1,6 @@
+# Example only — replace YOUR_DOMAIN with a real hostname.
+# TLS is obtained automatically by Caddy.
+
+YOUR_DOMAIN {
+	reverse_proxy 127.0.0.1:8080
+}

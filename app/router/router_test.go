@@ -12,7 +12,7 @@ import (
 	"github.com/xtls/xray-core/features/dns"
 	"github.com/xtls/xray-core/features/outbound"
 	routing_session "github.com/xtls/xray-core/features/routing/session"
-	"github.com/xtls/xray-core/testing/mocks"
+	"github.com/xtls/xray-core/tests/integration/mocks"
 )
 
 type mockOutboundManager struct {

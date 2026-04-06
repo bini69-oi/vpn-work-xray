@@ -9,12 +9,16 @@ endif
 ifneq ($(wildcard cmd/vpn-productctl),)
 CMD_PKGS += ./cmd/vpn-productctl
 endif
-PKGS ?= ./product/... $(CMD_PKGS)
-COVERPKGS ?= ./product/configgen ./product/connection
-LINT_TARGETS ?= ./product/... $(CMD_PKGS)
+PKGS ?= ./internal/... $(CMD_PKGS)
+COVERPKGS ?= ./internal/configgen ./internal/connection
+LINT_TARGETS ?= ./internal/... $(CMD_PKGS)
 ALL_GO_PKGS ?= ./...
 
-.PHONY: test test-all bench lint cover verify verify-quick secret-scan ci
+.PHONY: test test-all bench build lint cover verify verify-quick secret-scan ci
+
+build:
+	$(GO) build -trimpath -ldflags="-s -w" -o vpn-productd ./cmd/vpn-productd
+	$(GO) build -trimpath -ldflags="-s -w" -o vpn-productctl ./cmd/vpn-productctl
 
 test:
 	$(GO) test $(PKGS)
@@ -24,7 +28,7 @@ test-all:
 	$(GO) test $(ALL_GO_PKGS)
 
 bench:
-	$(GO) test ./product/configgen ./product/storage/sqlite -bench=. -benchmem -run=^$
+	$(GO) test ./internal/configgen ./internal/storage/sqlite -bench=. -benchmem -run=^$
 
 lint:
 	$(GOLANGCI_LINT) run $(LINT_TARGETS)

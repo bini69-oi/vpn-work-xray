@@ -17,7 +17,7 @@ import (
 	"github.com/xtls/xray-core/proxy/dokodemo"
 	"github.com/xtls/xray-core/proxy/vmess"
 	"github.com/xtls/xray-core/proxy/vmess/outbound"
-	"github.com/xtls/xray-core/testing/servers/tcp"
+	"github.com/xtls/xray-core/tests/integration/servers/tcp"
 	"google.golang.org/protobuf/proto"
 )
 

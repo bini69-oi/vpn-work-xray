@@ -1,0 +1,10 @@
+[Unit]
+Description=Daily geoip/geosite update for Xray
+
+[Timer]
+OnCalendar=*-*-* 04:15:00
+Persistent=true
+RandomizedDelaySec=900
+
+[Install]
+WantedBy=timers.target
