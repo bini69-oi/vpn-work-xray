@@ -80,8 +80,9 @@ func TestCleanupExpired(t *testing.T) {
 	})
 	require.NoError(t, err)
 
-	deleted, err := store.CleanupExpired(ctx, 30)
+	deleted, revokedStale, err := store.CleanupExpired(ctx, 30, 45)
 	require.NoError(t, err)
+	require.Equal(t, int64(0), revokedStale)
 	require.GreaterOrEqual(t, deleted, int64(2))
 
 	var issuesLeft int
@@ -93,3 +94,34 @@ func TestCleanupExpired(t *testing.T) {
 	require.Equal(t, 2, subsLeft) // sub-rev-new + sub-active-old
 }
 
+func TestCleanupExpired_RevokesStaleByLastAccess(t *testing.T) {
+	ctx := context.Background()
+	store, err := Open(ctx, filepath.Join(t.TempDir(), "cleanup-stale.db"))
+	require.NoError(t, err)
+	defer func() { _ = store.Close() }()
+
+	now := time.Now().UTC()
+	oldAccess := now.Add(-60 * 24 * time.Hour).UTC()
+
+	_, err = store.CreateSubscription(ctx, domain.Subscription{
+		ID:           "sub-stale",
+		Name:         "stale",
+		UserID:       "u1",
+		Token:        "tok-stale",
+		ProfileIDs:   []string{"p1"},
+		Status:       "active",
+		CreatedAt:    now,
+		UpdatedAt:    now,
+		LastAccessAt: &oldAccess,
+	})
+	require.NoError(t, err)
+
+	deleted, revokedStale, err := store.CleanupExpired(ctx, 30, 45)
+	require.NoError(t, err)
+	require.Equal(t, int64(0), deleted)
+	require.Equal(t, int64(1), revokedStale)
+
+	var revoked int
+	require.NoError(t, store.db.QueryRowContext(ctx, `SELECT revoked FROM subscriptions WHERE id = ?`, "sub-stale").Scan(&revoked))
+	require.Equal(t, 1, revoked)
+}

@@ -7,8 +7,8 @@ import (
 	"errors"
 	"io"
 	"net"
-	"net/netip"
 	"net/http"
+	"net/netip"
 	"os"
 	"strconv"
 	"strings"
@@ -60,32 +60,32 @@ type SubscriptionService interface {
 	GetActiveByUser(ctx context.Context, userID string) (domain.Subscription, error)
 	ExtendActiveByUser(ctx context.Context, userID string, days int) (domain.Subscription, error)
 	BlockActiveByUser(ctx context.Context, userID string) (domain.Subscription, error)
-	CleanupExpired(ctx context.Context, retentionDays int) (int64, error)
+	CleanupExpired(ctx context.Context, retentionDays int, staleDays int) (deleted int64, revokedStale int64, err error)
 }
 
 type Server struct {
-	connection  ConnectionService
-	profiles    ProfileService
-	diagnostics *diagnostics.Service
-	delivery    *delivery.Service
-	subs        SubscriptionService
-	apiToken    string
-	adminToken  string
-	adminAllowlist []netip.Prefix
+	connection        ConnectionService
+	profiles          ProfileService
+	diagnostics       *diagnostics.Service
+	delivery          *delivery.Service
+	subs              SubscriptionService
+	apiToken          string
+	adminToken        string
+	adminAllowlist    []netip.Prefix
 	trustedProxyCIDRs []netip.Prefix
-	xuiDBPath   string
-	xuiInboundPort int
-	clientLimitIP int64
-	issueStrict int32
-	log         *logging.Logger
-	counter     uint64
-	trafficMu   sync.Mutex
-	rateMu      sync.Mutex
-	rateByIP    map[string]rateEntry
-	publicRateByKey map[string]rateEntry
-	issueMu      sync.Mutex
-	issueByIDKey map[string]cachedIssue
-	lastTraffic map[string]struct {
+	xuiDBPath         string
+	xuiInboundPort    int
+	clientLimitIP     int64
+	issueStrict       int32
+	log               *logging.Logger
+	counter           uint64
+	trafficMu         sync.Mutex
+	rateMu            sync.Mutex
+	rateByIP          map[string]rateEntry
+	publicRateByKey   map[string]rateEntry
+	issueMu           sync.Mutex
+	issueByIDKey      map[string]cachedIssue
+	lastTraffic       map[string]struct {
 		up   int64
 		down int64
 	}
@@ -107,20 +107,20 @@ func NewServer(connection ConnectionService, profiles ProfileService, diagnostic
 		deliveryService = delivery.NewService()
 	}
 	return &Server{
-		connection:  connection,
-		profiles:    profiles,
-		diagnostics: diagnosticsService,
-		delivery:    deliveryService,
-		subs:        subs,
-		apiToken:    apiToken,
-		xuiDBPath:   "/etc/x-ui/x-ui.db",
-		xuiInboundPort: 8443,
-		clientLimitIP: 3,
-		issueStrict:  1,
-		log:         logger.WithModule("api"),
-		rateByIP:    map[string]rateEntry{},
+		connection:      connection,
+		profiles:        profiles,
+		diagnostics:     diagnosticsService,
+		delivery:        deliveryService,
+		subs:            subs,
+		apiToken:        apiToken,
+		xuiDBPath:       "/etc/x-ui/x-ui.db",
+		xuiInboundPort:  8443,
+		clientLimitIP:   3,
+		issueStrict:     1,
+		log:             logger.WithModule("api"),
+		rateByIP:        map[string]rateEntry{},
 		publicRateByKey: map[string]rateEntry{},
-		issueByIDKey: map[string]cachedIssue{},
+		issueByIDKey:    map[string]cachedIssue{},
 		lastTraffic: map[string]struct {
 			up   int64
 			down int64
@@ -260,14 +260,20 @@ func (s *Server) handleCleanup(w http.ResponseWriter, r *http.Request) {
 	}
 	var req struct {
 		RetentionDays int `json:"retentionDays"`
+		StaleDays     int `json:"staleDays"`
 	}
 	_ = json.NewDecoder(io.LimitReader(r.Body, 1<<20)).Decode(&req)
-	deleted, err := s.subs.CleanupExpired(r.Context(), req.RetentionDays)
+	deleted, revokedStale, err := s.subs.CleanupExpired(r.Context(), req.RetentionDays, req.StaleDays)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, err)
 		return
 	}
-	writeJSON(w, http.StatusOK, map[string]any{"ok": true, "deleted": deleted})
+	writeJSON(w, http.StatusOK, map[string]any{
+		"ok":           true,
+		"deleted":      deleted,
+		"revokedStale": revokedStale,
+		"affected":     deleted + revokedStale,
+	})
 }
 
 func (s *Server) handleProfileScoped(w http.ResponseWriter, r *http.Request) {
@@ -509,23 +515,23 @@ func (s *Server) subscriptionUserInfoHeader(ctx context.Context, token string) s
 	// If x-ui usage cannot be read, keep safe defaults instead of showing global inbound usage.
 	if !userScoped && used == 0 {
 		// fallback for legacy profiles without user-scoped x-ui stats
-	for _, pid := range resolved.ProfileIDs {
-		p, perr := s.profiles.Get(ctx, pid)
-		if perr != nil {
-			continue
+		for _, pid := range resolved.ProfileIDs {
+			p, perr := s.profiles.Get(ctx, pid)
+			if perr != nil {
+				continue
+			}
+			if p.TrafficUsedBytes > 0 {
+				used += p.TrafficUsedBytes
+			} else {
+				used += p.TrafficUsedUp + p.TrafficUsedDown
+			}
+			if p.TrafficLimitGB > 0 {
+				total = p.TrafficLimitGB * 1024 * 1024 * 1024
+			} else if p.TrafficLimitMB > 0 {
+				total = p.TrafficLimitMB * 1024 * 1024
+			}
+			break
 		}
-		if p.TrafficUsedBytes > 0 {
-			used += p.TrafficUsedBytes
-		} else {
-			used += p.TrafficUsedUp + p.TrafficUsedDown
-		}
-		if p.TrafficLimitGB > 0 {
-			total = p.TrafficLimitGB * 1024 * 1024 * 1024
-		} else if p.TrafficLimitMB > 0 {
-			total = p.TrafficLimitMB * 1024 * 1024
-		}
-		break
-	}
 	}
 	parts := []string{
 		"upload=0",
@@ -861,8 +867,8 @@ func (s *Server) handleSyncHeartbeat(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var req struct {
-		Name         string `json:"name"`
-		StartedAtUnix int64 `json:"startedAtUnix,omitempty"`
+		Name          string `json:"name"`
+		StartedAtUnix int64  `json:"startedAtUnix,omitempty"`
 	}
 	if err := json.NewDecoder(io.LimitReader(r.Body, 1<<20)).Decode(&req); err != nil {
 		writeError(w, http.StatusBadRequest, perrors.New("VPN_API_BODY_010", "invalid json body"))
@@ -1913,10 +1919,10 @@ func (s *Server) handleReadiness(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]any{
-		"ready": true,
+		"ready":        true,
 		"runtimeState": snapshot.Runtime.State,
 		"profileCount": snapshot.ProfileCount,
-		"checkedAt": snapshot.GeneratedAt,
+		"checkedAt":    snapshot.GeneratedAt,
 	})
 }
 
@@ -1979,4 +1985,3 @@ func selectProfileEndpoint(profile domain.Profile, endpointName string) (domain.
 	}
 	return domain.Endpoint{}, false
 }
-

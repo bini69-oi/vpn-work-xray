@@ -127,7 +127,9 @@ func (f *fakeSubs) BlockActiveByUser(_ context.Context, userID string) (domain.S
 	f.item.Status = "revoked"
 	return f.item, nil
 }
-func (f *fakeSubs) CleanupExpired(_ context.Context, _ int) (int64, error) { return 0, nil }
+func (f *fakeSubs) CleanupExpired(_ context.Context, _ int, _ int) (int64, int64, error) {
+	return 0, 0, nil
+}
 
 func TestAdminAndPublicRouteSeparation(t *testing.T) {
 	logger, err := logging.New("")
@@ -283,4 +285,3 @@ func TestIssueLinkNonStrictReturnsResponseOnApplyFailure(t *testing.T) {
 	require.NotEmpty(t, out["applyError"])
 	require.False(t, subs.item.Revoked)
 }
-

@@ -4,10 +4,10 @@ import (
 	"context"
 	"crypto/sha256"
 	"database/sql"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
-	"encoding/hex"
 	"strconv"
 	"time"
 
@@ -768,36 +768,64 @@ func (s *Store) ListSubscriptionIssues(ctx context.Context, userID string, limit
 	return out, nil
 }
 
-func (s *Store) CleanupExpired(ctx context.Context, retentionDays int) (int64, error) {
+func (s *Store) CleanupExpired(ctx context.Context, retentionDays int, staleDays int) (deleted int64, revokedStale int64, err error) {
 	if retentionDays <= 0 {
 		retentionDays = 30
 	}
+	if staleDays <= 0 {
+		staleDays = 45
+	}
 	mod := fmt.Sprintf("-%d days", retentionDays)
+	staleMod := fmt.Sprintf("-%d days", staleDays)
 	tx, err := s.db.BeginTx(ctx, nil)
 	if err != nil {
-		return 0, dbErr("cleanup_begin_tx", err)
+		return 0, 0, dbErr("cleanup_begin_tx", err)
 	}
 	defer func() { _ = tx.Rollback() }()
 
-	var affected int64
 	res, err := tx.ExecContext(ctx, `DELETE FROM subscription_issues WHERE julianday(issued_at) < julianday('now', ?)`, mod)
 	if err != nil {
-		return 0, dbErr("cleanup_issues", err)
+		return 0, 0, dbErr("cleanup_issues", err)
 	}
 	if n, _ := res.RowsAffected(); n > 0 {
-		affected += n
+		deleted += n
 	}
+
+	// Revoke stale subscriptions (link becomes invalid), but keep the record so it can be reactivated on payment renewal.
+	// We treat "never used" links as stale based on created_at.
+	now := time.Now().UTC().Format(time.RFC3339Nano)
+	res, err = tx.ExecContext(
+		ctx,
+		`UPDATE subscriptions
+		 SET status = 'revoked',
+		     revoked = 1,
+		     revoked_at = ?,
+		     updated_at = ?
+		 WHERE revoked = 0
+		   AND COALESCE(NULLIF(status,''), 'active') = 'active'
+		   AND julianday(COALESCE(NULLIF(last_access_at,''), created_at)) < julianday('now', ?)`,
+		now,
+		now,
+		staleMod,
+	)
+	if err != nil {
+		return 0, 0, dbErr("cleanup_revoke_stale", err)
+	}
+	if n, _ := res.RowsAffected(); n > 0 {
+		revokedStale += n
+	}
+
 	res, err = tx.ExecContext(ctx, `DELETE FROM subscriptions WHERE revoked = 1 AND julianday(updated_at) < julianday('now', ?)`, mod)
 	if err != nil {
-		return 0, dbErr("cleanup_subscriptions", err)
+		return 0, 0, dbErr("cleanup_subscriptions", err)
 	}
 	if n, _ := res.RowsAffected(); n > 0 {
-		affected += n
+		deleted += n
 	}
 	if err := tx.Commit(); err != nil {
-		return 0, dbErr("cleanup_commit", err)
+		return 0, 0, dbErr("cleanup_commit", err)
 	}
-	return affected, nil
+	return deleted, revokedStale, nil
 }
 
 func (s *Store) getSubscriptionBy(ctx context.Context, field string, value string) (domain.Subscription, error) {
@@ -810,20 +838,20 @@ func (s *Store) getSubscriptionBy(ctx context.Context, field string, value strin
 		value,
 	)
 	var (
-		item       domain.Subscription
-		rawToken   string
+		item            domain.Subscription
+		rawToken        string
 		tokenHashStored string
 		tokenHintStored string
-		rawIDs     string
-		status     string
-		revoked    int
-		revokedRaw string
-		rotatedRaw string
-		rotationCount int
-		accessRaw  string
-		expiresRaw string
-		createdRaw string
-		updatedRaw string
+		rawIDs          string
+		status          string
+		revoked         int
+		revokedRaw      string
+		rotatedRaw      string
+		rotationCount   int
+		accessRaw       string
+		expiresRaw      string
+		createdRaw      string
+		updatedRaw      string
 	)
 	if err := row.Scan(&item.ID, &item.Name, &item.UserID, &rawToken, &tokenHashStored, &tokenHintStored, &rawIDs, &status, &revoked, &revokedRaw, &rotatedRaw, &rotationCount, &accessRaw, &expiresRaw, &createdRaw, &updatedRaw); err != nil {
 		if errors.Is(err, sql.ErrNoRows) {

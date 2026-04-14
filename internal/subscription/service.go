@@ -27,7 +27,7 @@ type Repository interface {
 	RotateSubscriptionToken(ctx context.Context, id, token string) (domain.Subscription, error)
 	TouchSubscriptionAccess(ctx context.Context, id string) error
 	UpdateSubscriptionProfiles(ctx context.Context, id string, profileIDs []string) error
-	CleanupExpired(ctx context.Context, retentionDays int) (int64, error)
+	CleanupExpired(ctx context.Context, retentionDays int, staleDays int) (deleted int64, revokedStale int64, err error)
 }
 
 type ProfileProvider interface {
@@ -280,8 +280,8 @@ func (s *Service) BlockActiveByUser(ctx context.Context, userID string) (domain.
 	return s.repo.GetSubscription(ctx, item.ID)
 }
 
-func (s *Service) CleanupExpired(ctx context.Context, retentionDays int) (int64, error) {
-	return s.repo.CleanupExpired(ctx, retentionDays)
+func (s *Service) CleanupExpired(ctx context.Context, retentionDays int, staleDays int) (deleted int64, revokedStale int64, err error) {
+	return s.repo.CleanupExpired(ctx, retentionDays, staleDays)
 }
 
 func randomToken(size int) (string, error) {
@@ -295,4 +295,3 @@ func randomToken(size int) (string, error) {
 func randomID(prefix string) string {
 	return fmt.Sprintf("%s-%d", prefix, time.Now().UTC().UnixNano())
 }
-

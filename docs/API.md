@@ -123,15 +123,15 @@ Auth: `Authorization: Bearer <VPN_PRODUCT_API_TOKEN>` for all endpoints.
 - Response `200`: `{"ok":true}`
 
 ### `POST /v1/internal/cleanup`
-- Description: Delete old rows from `subscription_issues` and old revoked subscriptions from `subscriptions`.
+- Description: Revoke stale subscription links and delete old rows from `subscription_issues` and old revoked subscriptions from `subscriptions`.
 - Auth: same as `/v1/*` (bearer token).
 - Request (optional):
 ```json
-{"retentionDays":30}
+{"retentionDays":30,"staleDays":45}
 ```
 - Response `200`:
 ```json
-{"ok":true,"deleted":123}
+{"ok":true,"deleted":123,"revokedStale":5,"affected":128}
 ```
 
 ### `GET /v1/integration/3xui/users?panel=3x-ui`
