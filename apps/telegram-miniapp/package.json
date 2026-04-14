@@ -2,10 +2,10 @@
   "name": "vpn-tg-miniapp",
   "version": "1.0.0",
   "description": "Telegram Mini App for VPN product (vpn-work-xray)",
-  "main": "bot/index.js",
+  "main": "index.js",
   "scripts": {
-    "start": "node bot/index.js",
-    "dev": "node bot/index.js"
+    "start": "node index.js",
+    "dev": "node index.js"
   },
   "dependencies": {
     "express": "^4.21.0",

@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 import pathlib
 import re
+import subprocess
 import sys
 
 ROOT = pathlib.Path(__file__).resolve().parents[1]
@@ -31,12 +32,31 @@ def allowed(path: pathlib.Path, line: str, rules: list[str]) -> bool:
     return False
 
 
+def iter_files_to_scan() -> list[pathlib.Path]:
+    """Prefer tracked paths so local .env and build artifacts are not flagged."""
+    if (ROOT / ".git").exists():
+        try:
+            out = subprocess.check_output(
+                ["git", "-C", str(ROOT), "ls-files", "-z"],
+                stderr=subprocess.DEVNULL,
+            )
+            paths: list[pathlib.Path] = []
+            for raw in out.split(b"\0"):
+                if not raw:
+                    continue
+                p = ROOT / raw.decode(errors="replace")
+                if p.is_file():
+                    paths.append(p)
+            return paths
+        except (subprocess.CalledProcessError, FileNotFoundError):
+            pass
+    return [p for p in ROOT.rglob("*") if p.is_file()]
+
+
 def main() -> int:
     rules = read_allowlist()
     findings: list[str] = []
-    for path in ROOT.rglob("*"):
-        if not path.is_file():
-            continue
+    for path in iter_files_to_scan():
         if any(part in SKIP_DIRS for part in path.parts):
             continue
         if path.suffix.lower() in SKIP_SUFFIX:

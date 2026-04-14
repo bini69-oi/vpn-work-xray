@@ -57,10 +57,10 @@ verify:
 
 ci: verify
 
-# Telegram-бот (aiogram) в каталоге bot/ — не из корня репозитория
+# Telegram-бот (aiogram) — apps/vpn-telegram-bot/
 bot-venv:
-	cd bot && $(PYTHON) -m venv .venv && ./.venv/bin/pip install -U pip && ./.venv/bin/pip install -r requirements.txt
+	cd apps/vpn-telegram-bot && $(PYTHON) -m venv .venv && ./.venv/bin/pip install -U pip && ./.venv/bin/pip install -r requirements.txt
 
 bot:
-	@test -f bot/.venv/bin/python || (echo "Сначала выполни: make bot-venv" && exit 1)
-	cd bot && ./.venv/bin/python -m vpn_bot
+	@test -f apps/vpn-telegram-bot/.venv/bin/python || (echo "Сначала выполни: make bot-venv" && exit 1)
+	cd apps/vpn-telegram-bot && ./.venv/bin/python -m vpn_bot

@@ -19,7 +19,7 @@
 
 VPN Product — слой вокруг [Xray-core](https://github.com/XTLS/Xray-core): API (`vpn-productd`), SQLite, интеграция с [3x-ui](https://github.com/MHSanaei/3x-ui), скрипты деплоя и опционально Telegram-бот.
 
-Исходники самого ядра Xray лежат в корне репозитория (`app/`, `common/`, `core/`, `proxy/`, `transport/`, …) с тем же модулем Go `github.com/xtls/xray-core` — **мы не переносим их в подпапку `xray/`**, чтобы не ломать импорты. Код продукта — в **`internal/`**.
+Исходники самого ядра Xray лежат в корне репозитория (`app/`, `common/`, `core/`, `proxy/`, `transport/`, …) с тем же модулем Go `github.com/xtls/xray-core` — **мы не переносим их в подпапку `xray/`**, чтобы не ломать импорты. Код продукта — в **`internal/`**. Клиентские оболочки (Telegram) — в **`apps/`**.
 
 ### Ключевые возможности
 
@@ -108,6 +108,7 @@ make verify         # полный прогон включая все пакет
 
 | Путь | Назначение |
 |------|------------|
+| `apps/` | Telegram-бот и Mini App (см. [apps/README.md](apps/README.md)) |
 | `cmd/vpn-productd`, `cmd/vpn-productctl` | Точки входа продукта |
 | `internal/` | API, конфигген, профили, подписки, SQLite, routing, … |
 | `app/`, `common/`, `core/`, `features/`, `infra/`, `proxy/`, `transport/`, `main/` | Исходники Xray-core (upstream layout) |
@@ -115,7 +116,7 @@ make verify         # полный прогон включая все пакет
 | `deploy/` | systemd, скрипты, env-примеры, Caddy |
 | `docs/` | API, деплой, runbooks |
 | `configs/` | Примеры конфигов |
-| `telegram-bot/` | Опциональный бот (Python) |
+| `archive/telegram-bot-legacy/` | Старый бот (`python-telegram-bot`), архив |
 
 ---
 

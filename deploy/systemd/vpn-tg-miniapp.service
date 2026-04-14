@@ -7,10 +7,10 @@ Wants=network-online.target
 Type=simple
 User=vpn-product
 Group=vpn-product
-# Adjust to your checkout path (must contain bot/index.js and webapp/).
-WorkingDirectory=/opt/vpn-product/src/telegram-miniapp
+# Adjust to your checkout path (must contain index.js and webapp/).
+WorkingDirectory=/opt/vpn-product/src/apps/telegram-miniapp
 EnvironmentFile=-/etc/vpn-product/vpn-tg-miniapp.env
-ExecStart=/usr/bin/node bot/index.js
+ExecStart=/usr/bin/node index.js
 Restart=always
 RestartSec=5
 NoNewPrivileges=true

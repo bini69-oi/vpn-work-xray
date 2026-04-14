@@ -50,7 +50,7 @@ async def _bot_get_me(bot: Bot):
 
 async def main() -> None:
     if not settings.bot_token.strip():
-        raise SystemExit("BOT_TOKEN is required (see bot/.env.example)")
+        raise SystemExit("BOT_TOKEN is required (see apps/vpn-telegram-bot/.env.example)")
 
     await init_db()
 
@@ -82,7 +82,7 @@ async def main() -> None:
     except TelegramNetworkError as e:
         log.error(
             "Нет соединения с Telegram (api.telegram.org). Проверь интернет, VPN или задай "
-            "в bot/.env TELEGRAM_PROXY=http://127.0.0.1:ПОРТ для локального прокси. Ошибка: %s",
+            "в .env приложения (apps/vpn-telegram-bot/) задай TELEGRAM_PROXY=http://127.0.0.1:ПОРТ для локального прокси. Ошибка: %s",
             e,
         )
         await tg_session.close()

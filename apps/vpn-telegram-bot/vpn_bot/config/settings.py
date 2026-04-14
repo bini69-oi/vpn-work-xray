@@ -5,7 +5,7 @@ from pathlib import Path
 from pydantic import AliasChoices, Field, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
-# Каталог `bot/` (на уровень выше пакета `vpn_bot`).
+# Каталог приложения (родитель пакета `vpn_bot`), например `apps/vpn-telegram-bot/`.
 _BOT_ROOT = Path(__file__).resolve().parents[2]
 
 

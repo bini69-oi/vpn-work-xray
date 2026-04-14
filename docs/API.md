@@ -142,7 +142,7 @@ Auth: `Authorization: Bearer <VPN_PRODUCT_API_TOKEN>` for all endpoints.
 - Description: Issue a personal subscription link for user (30 days) and auto-apply it to `3x-ui` for panel visibility.
 - Request:
 ```json
-{"userId":"tg_12345","profileIds":["xui-test-vpn"],"name":"TEST VPN","source":"telegram-miniapp"}
+{"userId":"tg_12345","profileIds":["xui-test-vpn"],"name":"TEST VPN","source":"telegram_miniapp"}
 ```
 - Notes:
   - `profileIds` is optional; default is `["xui-test-vpn"]`.

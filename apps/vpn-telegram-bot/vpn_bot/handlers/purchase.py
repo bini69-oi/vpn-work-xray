@@ -119,7 +119,7 @@ async def cb_pay_manual_legacy(query: CallbackQuery, api) -> None:
 @router.callback_query(F.data.startswith("sbp_pay_stub_"))
 async def cb_sbp_pay_stub(query: CallbackQuery) -> None:
     await query.answer(
-        "Заглушка: в bot/.env задай SBP_PAY_URL=https://… (страница банка или платёжной формы).",
+        "Заглушка: в .env приложения (apps/vpn-telegram-bot/) задай SBP_PAY_URL=https://… (страница банка или платёжной формы).",
         show_alert=True,
     )
 

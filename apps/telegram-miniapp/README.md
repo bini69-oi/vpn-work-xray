@@ -13,12 +13,21 @@ Telegram Mini App для управления VPN-подписками. Рабо
 ## Структура
 
 ```
-telegram-miniapp/
-├── bot/
-│   └── index.js          # Express + API proxy (+ опциональный polling-бот)
+apps/telegram-miniapp/
+├── index.js              # Точка входа (dotenv + старт сервера)
+├── src/
+│   ├── server.js         # Express, статика, маршруты
+│   ├── config.js         # Переменные окружения
+│   ├── telegram-init-data.js
+│   ├── vpn-product-client.js
+│   ├── optional-polling-bot.js
+│   ├── middleware/
+│   │   └── telegram-user.js
+│   └── routes/
+│       └── api.js
 ├── webapp/
 │   └── index.html        # Mini App фронтенд (single-file)
-├── .env.example           # Шаблон переменных окружения
+├── .env.example          # Шаблон переменных окружения
 ├── package.json
 └── README.md
 ```
@@ -81,7 +90,7 @@ npm install
 npm start
 ```
 
-По умолчанию **только** Express (статика + `/api/*`). Основной бот — Python в `telegram-bot/`; задай там `TELEGRAM_MINIAPP_URL` (тот же URL, что `WEBAPP_URL`). Чтобы снова поднять polling в Node, задай `START_TELEGRAM_BOT_POLLING=1`.
+По умолчанию **только** Express (статика + `/api/*`). Основной бот — Python в **`apps/vpn-telegram-bot/`** (aiogram). URL миниаппа в Telegram задай в **@BotFather** (Menu Button / Mini App) на тот же **HTTPS**, что `WEBAPP_URL`. Чтобы снова поднять polling в Node, задай `START_TELEGRAM_BOT_POLLING=1`.
 
 ### 6. Проверь
 
@@ -93,14 +102,14 @@ npm start
 
 ```bash
 # В каталоге репозитория
-cd telegram-miniapp
+cd apps/telegram-miniapp
 npm install --production
 
 # Секреты — в /etc/vpn-product/vpn-tg-miniapp.env (см. .env.example)
 sudo systemctl enable --now vpn-tg-miniapp.service
 ```
 
-Юнит в репозитории: `deploy/systemd/vpn-tg-miniapp.service` (скопируй в `/etc/systemd/system/` и поправь `WorkingDirectory` под путь к `telegram-miniapp` на сервере).
+Юнит в репозитории: `deploy/systemd/vpn-tg-miniapp.service` (скопируй в `/etc/systemd/system/` и поправь `WorkingDirectory` под путь к `apps/telegram-miniapp` на сервере).
 
 ### Добавь в Caddy (для HTTPS)
 

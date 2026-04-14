@@ -47,7 +47,7 @@ docker-compose.override.yml
 *.backup
 *.tar.gz
 
-# Python (telegram-bot)
+# Python
 __pycache__/
 *.pyc
 .venv/
@@ -66,9 +66,6 @@ var/**/assets/*.tmp
 # Product runtime data directory (contains db/configs/assets)
 var/
 
-# Telegram bot local secrets
-telegram-bot/.env
-
 # Node mini-app
-telegram-miniapp/node_modules/
-telegram-miniapp/.env
+apps/telegram-miniapp/node_modules/
+apps/telegram-miniapp/.env

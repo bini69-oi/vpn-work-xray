@@ -36,7 +36,7 @@ class BotConfig:
     loki_username: str
     loki_password: str
 
-    # HTTPS URL of the Mini App (same host as Express in telegram-miniapp/). Adds a WebApp button in the menu.
+    # HTTPS URL of the Mini App (same host as Express in apps/telegram-miniapp/). Adds a WebApp button in the menu.
     miniapp_url: str
 
 

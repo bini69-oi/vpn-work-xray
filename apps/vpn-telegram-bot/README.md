@@ -1,8 +1,8 @@
 # VPN Shield — бот (aiogram 3)
 
-Отдельный сервис в каталоге `bot/`: премиальный UX, Reply-меню, оплата (ручная / крипта / Telegram Payments), рефералы, админка (health + рассылка).
+Сервис в каталоге `apps/vpn-telegram-bot/`: премиальный UX, Reply-меню, оплата (ручная / крипта / Telegram Payments), рефералы, админка (health + рассылка).
 
-Исходники сгруппированы в пакет **`vpn_bot/`**: `config/`, `database/`, `handlers/`, `keyboards/`, `middlewares/`, `services/`, `utils/`; сборка приложения — в `vpn_bot/app.py`, запуск модулем `python -m vpn_bot` (в корне `bot/` остаётся тонкий `main.py` для совместимости).
+Исходники сгруппированы в пакет **`vpn_bot/`**: `config/`, `database/`, `handlers/`, `keyboards/`, `middlewares/`, `services/`, `utils/`; сборка приложения — в `vpn_bot/app.py`, запуск модулем `python -m vpn_bot` (тонкий `main.py` в корне этого каталога для совместимости).
 
 ## Связь с vpn-productd
 
@@ -22,7 +22,7 @@
 ## Запуск
 
 ```bash
-cd bot
+cd apps/vpn-telegram-bot
 python3 -m venv .venv
 source .venv/bin/activate
 pip install -r requirements.txt
@@ -36,9 +36,9 @@ python -m vpn_bot
 Из корня репозитория:
 
 ```bash
-docker build -f bot/Dockerfile -t vpn-bot ./bot
+docker build -f apps/vpn-telegram-bot/Dockerfile -t vpn-bot ./apps/vpn-telegram-bot
 ```
 
 ## Старый бот
 
-Предыдущая реализация на `python-telegram-bot` лежит в **`archive/telegram-bot-legacy/`** (не запускается из корня). Актуальный код — этот каталог `bot/`.
+Предыдущая реализация на `python-telegram-bot` лежит в **`archive/telegram-bot-legacy/`** (не запускается из корня). Актуальный код — этот каталог.
