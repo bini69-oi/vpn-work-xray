@@ -37,6 +37,13 @@ func Open(ctx context.Context, path string) (*Store, error) {
 		_ = db.Close()
 		return nil, dbErr("ping", err)
 	}
+	// WAL improves concurrency and reduces SQLITE_BUSY for mixed read/write workloads.
+	if _, err := db.ExecContext(ctx, "PRAGMA journal_mode=WAL"); err != nil {
+		_ = db.Close()
+		return nil, dbErr("wal", err)
+	}
+	// Wait for locks instead of failing fast.
+	_, _ = db.ExecContext(ctx, "PRAGMA busy_timeout=5000")
 	store := &Store{db: db}
 	if err := store.migrate(ctx); err != nil {
 		_ = db.Close()
@@ -562,6 +569,63 @@ func (s *Store) GetActiveSubscriptionByUser(ctx context.Context, userID string) 
 	return item, nil
 }
 
+func (s *Store) GetLastSubscriptionByUser(ctx context.Context, userID string) (domain.Subscription, error) {
+	row := s.db.QueryRowContext(
+		ctx,
+		`SELECT id, name, user_id, COALESCE(token,''), COALESCE(token_hash,''), COALESCE(token_hint,''), profile_ids_json, COALESCE(status,''), COALESCE(revoked,0), COALESCE(revoked_at,''), COALESCE(rotated_at,''), COALESCE(rotation_count,0), COALESCE(last_access_at,''), COALESCE(expires_at,''), COALESCE(created_at,''), COALESCE(updated_at,'')
+		 FROM subscriptions
+		 WHERE user_id = ?
+		 ORDER BY created_at DESC
+		 LIMIT 1`,
+		userID,
+	)
+	var (
+		item            domain.Subscription
+		rawToken        string
+		tokenHashStored string
+		tokenHintStored string
+		rawIDs          string
+		status          string
+		revoked         int
+		revokedRaw      string
+		rotatedRaw      string
+		rotationCount   int
+		accessRaw       string
+		expiresRaw      string
+		createdRaw      string
+		updatedRaw      string
+	)
+	if err := row.Scan(&item.ID, &item.Name, &item.UserID, &rawToken, &tokenHashStored, &tokenHintStored, &rawIDs, &status, &revoked, &revokedRaw, &rotatedRaw, &rotationCount, &accessRaw, &expiresRaw, &createdRaw, &updatedRaw); err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return domain.Subscription{}, profile.ErrNotFound
+		}
+		return domain.Subscription{}, dbErr("get_last_subscription_by_user", err)
+	}
+	if err := json.Unmarshal([]byte(rawIDs), &item.ProfileIDs); err != nil {
+		return domain.Subscription{}, dbErr("get_last_subscription_by_user_decode", err)
+	}
+	item.Revoked = revoked == 1
+	item.Status = status
+	if tokenHintStored != "" {
+		item.TokenHint = tokenHintStored
+	} else if rawToken != "" {
+		item.TokenHint = tokenHint(rawToken)
+	}
+	_ = tokenHashStored
+	item.RotatedAt = parseNullableTime(rotatedRaw)
+	item.RotationCount = rotationCount
+	item.RevokedAt = parseNullableTime(revokedRaw)
+	item.LastAccessAt = parseNullableTime(accessRaw)
+	item.ExpiresAt = parseNullableTime(expiresRaw)
+	if ts, err := time.Parse(time.RFC3339Nano, createdRaw); err == nil {
+		item.CreatedAt = ts
+	}
+	if ts, err := time.Parse(time.RFC3339Nano, updatedRaw); err == nil {
+		item.UpdatedAt = ts
+	}
+	return item, nil
+}
+
 func (s *Store) SetSubscriptionExpiration(ctx context.Context, id string, expiresAt *time.Time) error {
 	_, err := s.db.ExecContext(
 		ctx,
@@ -574,6 +638,26 @@ func (s *Store) SetSubscriptionExpiration(ctx context.Context, id string, expire
 	)
 	if err != nil {
 		return dbErr("set_subscription_expiration", err)
+	}
+	return nil
+}
+
+func (s *Store) ReactivateSubscription(ctx context.Context, id string, expiresAt *time.Time) error {
+	_, err := s.db.ExecContext(
+		ctx,
+		`UPDATE subscriptions
+		 SET status = 'active',
+		     revoked = 0,
+		     revoked_at = NULL,
+		     expires_at = ?,
+		     updated_at = ?
+		 WHERE id = ?`,
+		timeToText(expiresAt),
+		time.Now().UTC().Format(time.RFC3339Nano),
+		id,
+	)
+	if err != nil {
+		return dbErr("reactivate_subscription", err)
 	}
 	return nil
 }
@@ -682,6 +766,38 @@ func (s *Store) ListSubscriptionIssues(ctx context.Context, userID string, limit
 		return nil, dbErr("list_subscription_issues_rows", err)
 	}
 	return out, nil
+}
+
+func (s *Store) CleanupExpired(ctx context.Context, retentionDays int) (int64, error) {
+	if retentionDays <= 0 {
+		retentionDays = 30
+	}
+	mod := fmt.Sprintf("-%d days", retentionDays)
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return 0, dbErr("cleanup_begin_tx", err)
+	}
+	defer func() { _ = tx.Rollback() }()
+
+	var affected int64
+	res, err := tx.ExecContext(ctx, `DELETE FROM subscription_issues WHERE julianday(issued_at) < julianday('now', ?)`, mod)
+	if err != nil {
+		return 0, dbErr("cleanup_issues", err)
+	}
+	if n, _ := res.RowsAffected(); n > 0 {
+		affected += n
+	}
+	res, err = tx.ExecContext(ctx, `DELETE FROM subscriptions WHERE revoked = 1 AND julianday(updated_at) < julianday('now', ?)`, mod)
+	if err != nil {
+		return 0, dbErr("cleanup_subscriptions", err)
+	}
+	if n, _ := res.RowsAffected(); n > 0 {
+		affected += n
+	}
+	if err := tx.Commit(); err != nil {
+		return 0, dbErr("cleanup_commit", err)
+	}
+	return affected, nil
 }
 
 func (s *Store) getSubscriptionBy(ctx context.Context, field string, value string) (domain.Subscription, error) {

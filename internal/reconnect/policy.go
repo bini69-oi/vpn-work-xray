@@ -70,7 +70,11 @@ func (e *Engine) next(profileID string, policy domain.ReconnectPolicy, attempt i
 			filtered = append(filtered, ts)
 		}
 	}
-	e.failures[profileID] = filtered
+	if len(filtered) == 0 {
+		delete(e.failures, profileID)
+	} else {
+		e.failures[profileID] = filtered
+	}
 	if policy.DegradedFailures > 0 && len(filtered) >= policy.DegradedFailures {
 		decision.Degraded = true
 	}

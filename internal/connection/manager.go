@@ -30,6 +30,7 @@ type Manager struct {
 	configLog *logging.Logger
 	status    domain.RuntimeStatus
 	endpointScore map[string]int
+	lastGoodConfigPath string
 }
 
 func NewManager(profiles ProfileReader, gen *configgen.Generator, runtime RuntimeController, reconnectEngine *reconnect.Engine, logger *logging.Logger, configLogger *logging.Logger) *Manager {
@@ -105,6 +106,7 @@ func (m *Manager) Connect(ctx context.Context, profileID string) error {
 		if err := m.runtime.ApplyConfig(ctx, artifact.Path); err == nil {
 			m.adjustEndpointScore(endpoint.Name, 2)
 			m.mu.Lock()
+			m.lastGoodConfigPath = artifact.Path
 			m.setStatus(domain.StateConnected, profile.ID, endpoint.Name, "")
 			m.mu.Unlock()
 			telemetry.Default().XrayStatus.Set(1)
@@ -143,6 +145,17 @@ func (m *Manager) Connect(ctx context.Context, profileID string) error {
 	m.setStatus(domain.StateFailed, profile.ID, "", errToString(lastErr))
 	m.mu.Unlock()
 	return lastErr
+}
+
+// RollbackLastGood re-applies the last known-good generated runtime config (best-effort).
+func (m *Manager) RollbackLastGood(ctx context.Context) error {
+	m.mu.RLock()
+	path := m.lastGoodConfigPath
+	m.mu.RUnlock()
+	if path == "" {
+		return errors.New("no last good config available")
+	}
+	return m.runtime.ApplyConfig(ctx, path)
 }
 
 func (m *Manager) adjustEndpointScore(name string, delta int) {

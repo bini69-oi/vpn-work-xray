@@ -33,6 +33,7 @@ type Service struct {
 	prober         health.Prober
 	profiles       ProfilesProvider
 	dbChecker      DBChecker
+	xuiChecker     XUIChecker
 	assetsDir      string
 	networkTargets []string
 }
@@ -41,13 +42,17 @@ type DBChecker interface {
 	SelfCheck(ctx context.Context) error
 }
 
+type XUIChecker interface {
+	Check(ctx context.Context) (bool, map[string]any)
+}
+
 type HealthReport struct {
 	Status  string         `json:"status"`
 	Details map[string]any `json:"details"`
 }
 
 func (r HealthReport) Healthy() bool {
-	return r.Status == "healthy"
+	return r.Status == "healthy" || r.Status == "degraded"
 }
 
 func NewService(status StatusProvider, prober health.Prober, profiles ProfilesProvider, dbChecker DBChecker, assetsDir string) *Service {
@@ -58,6 +63,10 @@ func NewService(status StatusProvider, prober health.Prober, profiles ProfilesPr
 		dbChecker: dbChecker,
 		assetsDir: assetsDir,
 	}
+}
+
+func (s *Service) SetXUIChecker(checker XUIChecker) {
+	s.xuiChecker = checker
 }
 
 func (s *Service) SetNetworkTargets(targets ...string) {
@@ -114,6 +123,14 @@ func (s *Service) SelfCheck(ctx context.Context) HealthReport {
 	report.Details["network"] = netInfo
 	if !netOK {
 		report.Status = "unhealthy"
+	}
+
+	if s.xuiChecker != nil {
+		ok, info := s.xuiChecker.Check(ctx)
+		report.Details["xui"] = info
+		if !ok && report.Status == "healthy" {
+			report.Status = "degraded"
+		}
 	}
 
 	report.Details["runtime_status"] = runtimeStatus

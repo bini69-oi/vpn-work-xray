@@ -2,5 +2,36 @@
 # TLS is obtained automatically by Caddy.
 
 YOUR_DOMAIN {
-	reverse_proxy 127.0.0.1:8080
+	header {
+		Strict-Transport-Security "max-age=31536000; includeSubDomains; preload"
+		X-Content-Type-Options "nosniff"
+		X-Frame-Options "DENY"
+		Referrer-Policy "no-referrer"
+		X-Robots-Tag "noindex, nofollow"
+		-Server
+	}
+
+	# Public subscription URLs should never be cached.
+	header /public/subscriptions/* {
+		Cache-Control "no-store, no-cache, must-revalidate"
+	}
+
+	@api path /v1/* /admin/* /api/v1/*
+	handle @api {
+		reverse_proxy 127.0.0.1:8080
+	}
+
+	handle /public/* {
+		reverse_proxy 127.0.0.1:8080
+	}
+	handle /s/* {
+		reverse_proxy 127.0.0.1:8080
+	}
+	handle /metrics {
+		reverse_proxy 127.0.0.1:8080
+	}
+
+	handle {
+		respond 404
+	}
 }

@@ -6,6 +6,13 @@ import "strings"
 func BuildRUPresetRules(assets GeoAssets, wd WarpDomainsFile, warnings *[]string) []map[string]any {
 	rules := make([]map[string]any, 0, 8)
 
+	rules = append(rules, map[string]any{
+		"type":        "field",
+		"comment":     "DNS-запросы через proxy (защита от подмены)",
+		"port":        "53",
+		"outboundTag": "proxy",
+	})
+
 	if assets.GeoSite {
 		rules = append(rules, map[string]any{
 			"type":        "field",

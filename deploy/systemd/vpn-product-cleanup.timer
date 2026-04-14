@@ -1,0 +1,11 @@
+[Unit]
+Description=Run vpn-product cleanup daily
+
+[Timer]
+OnCalendar=*-*-* 04:10:00
+Persistent=true
+Unit=vpn-product-cleanup.service
+
+[Install]
+WantedBy=timers.target
+

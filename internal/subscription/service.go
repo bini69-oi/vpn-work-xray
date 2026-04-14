@@ -18,13 +18,16 @@ type Repository interface {
 	CreateSubscription(ctx context.Context, item domain.Subscription) (domain.Subscription, error)
 	GetSubscription(ctx context.Context, id string) (domain.Subscription, error)
 	GetActiveSubscriptionByUser(ctx context.Context, userID string) (domain.Subscription, error)
+	GetLastSubscriptionByUser(ctx context.Context, userID string) (domain.Subscription, error)
 	GetSubscriptionByToken(ctx context.Context, token string) (domain.Subscription, error)
 	RevokeSubscription(ctx context.Context, id string) error
 	RevokeActiveSubscriptionsByUser(ctx context.Context, userID string) (int64, error)
 	SetSubscriptionExpiration(ctx context.Context, id string, expiresAt *time.Time) error
+	ReactivateSubscription(ctx context.Context, id string, expiresAt *time.Time) error
 	RotateSubscriptionToken(ctx context.Context, id, token string) (domain.Subscription, error)
 	TouchSubscriptionAccess(ctx context.Context, id string) error
 	UpdateSubscriptionProfiles(ctx context.Context, id string, profileIDs []string) error
+	CleanupExpired(ctx context.Context, retentionDays int) (int64, error)
 }
 
 type ProfileProvider interface {
@@ -153,19 +156,17 @@ func (s *Service) IssueLink30Days(ctx context.Context, userID string, profileIDs
 	if userID == "" {
 		return domain.Subscription{}, errors.New("userId is required")
 	}
-	_, _ = s.repo.RevokeActiveSubscriptionsByUser(ctx, userID)
-	now := time.Now().UTC()
-	expires := now.Add(30 * 24 * time.Hour)
-	item, err := s.Create(ctx, domain.Subscription{
-		Name:       strings.TrimSpace(name),
-		UserID:     userID,
-		ProfileIDs: profileIDs,
-		ExpiresAt:  &expires,
-	})
+	item, isNew, err := s.RenewOrCreate(ctx, userID, 30, profileIDs, name, source)
 	if err != nil {
 		return domain.Subscription{}, err
 	}
-	if s.issues != nil {
+	// Only record an issuance event when a new token is created.
+	if isNew && s.issues != nil {
+		now := time.Now().UTC()
+		expires := now.Add(30 * 24 * time.Hour)
+		if item.ExpiresAt != nil {
+			expires = item.ExpiresAt.UTC()
+		}
 		_ = s.issues.CreateSubscriptionIssue(ctx, domain.SubscriptionIssue{
 			ID:             randomID("issue"),
 			UserID:         userID,
@@ -177,6 +178,51 @@ func (s *Service) IssueLink30Days(ctx context.Context, userID string, profileIDs
 		})
 	}
 	return item, nil
+}
+
+func (s *Service) RenewOrCreate(ctx context.Context, userID string, days int, profileIDs []string, name string, _ string) (sub domain.Subscription, isNew bool, err error) {
+	userID = strings.TrimSpace(userID)
+	if userID == "" {
+		return domain.Subscription{}, false, errors.New("userId is required")
+	}
+	if days <= 0 {
+		days = 30
+	}
+	last, err := s.repo.GetLastSubscriptionByUser(ctx, userID)
+	switch {
+	case err == nil:
+		base := time.Now().UTC()
+		if last.ExpiresAt != nil && last.ExpiresAt.After(base) {
+			base = last.ExpiresAt.UTC()
+		}
+		expires := base.Add(time.Duration(days) * 24 * time.Hour)
+		if err := s.repo.ReactivateSubscription(ctx, last.ID, &expires); err != nil {
+			return domain.Subscription{}, false, err
+		}
+		reactivated, err := s.repo.GetSubscription(ctx, last.ID)
+		if err != nil {
+			return domain.Subscription{}, false, err
+		}
+		reactivated.Status = "active"
+		return reactivated, false, nil
+	case errors.Is(err, profilepkg.ErrNotFound):
+		// fallthrough
+	default:
+		return domain.Subscription{}, false, err
+	}
+
+	now := time.Now().UTC()
+	expires := now.Add(time.Duration(days) * 24 * time.Hour)
+	created, err := s.Create(ctx, domain.Subscription{
+		Name:       strings.TrimSpace(name),
+		UserID:     userID,
+		ProfileIDs: profileIDs,
+		ExpiresAt:  &expires,
+	})
+	if err != nil {
+		return domain.Subscription{}, false, err
+	}
+	return created, true, nil
 }
 
 func (s *Service) ListIssues(ctx context.Context, userID string, limit int) ([]domain.SubscriptionIssue, error) {
@@ -232,6 +278,10 @@ func (s *Service) BlockActiveByUser(ctx context.Context, userID string) (domain.
 		return domain.Subscription{}, err
 	}
 	return s.repo.GetSubscription(ctx, item.ID)
+}
+
+func (s *Service) CleanupExpired(ctx context.Context, retentionDays int) (int64, error) {
+	return s.repo.CleanupExpired(ctx, retentionDays)
 }
 
 func randomToken(size int) (string, error) {

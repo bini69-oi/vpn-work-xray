@@ -122,6 +122,18 @@ Auth: `Authorization: Bearer <VPN_PRODUCT_API_TOKEN>` for all endpoints.
 - Request: `domain.PanelUser`.
 - Response `200`: `{"ok":true}`
 
+### `POST /v1/internal/cleanup`
+- Description: Delete old rows from `subscription_issues` and old revoked subscriptions from `subscriptions`.
+- Auth: same as `/v1/*` (bearer token).
+- Request (optional):
+```json
+{"retentionDays":30}
+```
+- Response `200`:
+```json
+{"ok":true,"deleted":123}
+```
+
 ### `GET /v1/integration/3xui/users?panel=3x-ui`
 - Description: List panel users.
 - Response `200`: `{"items":[...]}`
@@ -136,6 +148,8 @@ Auth: `Authorization: Bearer <VPN_PRODUCT_API_TOKEN>` for all endpoints.
   - `profileIds` is optional; default is `["xui-test-vpn"]`.
   - `expiresAt` is set automatically to now + 30 days.
   - Per-user limits are applied automatically: `30 days + 1 TB` in `3x-ui` (`client_traffics`).
+  - If the user already has a subscription (even expired or revoked), the server may **renew/reactivate** it instead of creating a new one.
+    In that case the existing token is kept (no new URL is generated) and the response `url` can be empty.
 - Response `200`:
 ```json
 {"subscription": {...}, "url":"https://<host>/public/subscriptions/<token>", "days":30, "appliedTo3xui":true, "profileId":"user-tg-12345"}
@@ -173,6 +187,9 @@ Auth: `Authorization: Bearer <VPN_PRODUCT_API_TOKEN>` for all endpoints.
 ```json
 {"ok":true,"action":"renew|block","subscriptionId":"sub-...","expiresAt":"..."}
 ```
+ - Notes:
+   - Renew keeps the same subscription token (clients do not need reconfiguration).
+   - Renew works for active, expired and revoked subscriptions (reactivates when needed).
 
 ### Routing (Xray rules, geo data, WARP)
 

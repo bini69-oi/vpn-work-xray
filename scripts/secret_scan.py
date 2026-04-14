@@ -9,10 +9,12 @@ ALLOWLIST = ROOT / ".secret-scan-allowlist"
 PATTERNS = [
     re.compile(r"-----BEGIN (RSA |EC |OPENSSH |)?PRIVATE KEY-----"),
     re.compile(r"AKIA[0-9A-Z]{16}"),
+    re.compile(r'(?i)(api[_-]?key|api[_-]?token|secret|password|bearer)\s*[:=]\s*["\']?[a-zA-Z0-9_\-]{20,}'),
+    re.compile(r"\b\d{8,10}:[A-Za-z0-9_-]{35}\b"),  # Telegram bot tokens
 ]
 
-SKIP_DIRS = {".git", "node_modules", "vendor", ".cursor", "var"}
-SKIP_SUFFIX = {".png", ".jpg", ".jpeg", ".gif", ".webp", ".pdf", ".zip", ".tar", ".gz", ".db", ".dat"}
+SKIP_DIRS = {".git", "node_modules", "vendor", ".cursor", "var", ".venv", "venv"}
+SKIP_SUFFIX = {".png", ".jpg", ".jpeg", ".gif", ".webp", ".pdf", ".zip", ".tar", ".gz", ".db", ".dat", ".pb.go", ".proto"}
 
 
 def read_allowlist() -> list[str]:

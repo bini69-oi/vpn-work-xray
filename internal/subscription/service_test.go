@@ -188,12 +188,166 @@ func TestLifecycleByUser(t *testing.T) {
 	require.NoError(t, err)
 	require.NotEmpty(t, sub.ID)
 
-	renewed, err := s.ExtendActiveByUser(ctx, "u-lc", 10)
+	renewed, isNew, err := s.RenewOrCreate(ctx, "u-lc", 10, []string{"p1"}, "vpn", "test")
 	require.NoError(t, err)
+	require.False(t, isNew)
 	require.NotNil(t, renewed.ExpiresAt)
 
 	blocked, err := s.BlockActiveByUser(ctx, "u-lc")
 	require.NoError(t, err)
 	require.True(t, blocked.Revoked)
+}
+
+func TestRenewOrCreate_ActiveSubscription(t *testing.T) {
+	ctx := context.Background()
+	store, err := sqlite.Open(ctx, filepath.Join(t.TempDir(), "subs-renew-active.db"))
+	require.NoError(t, err)
+	defer func() { _ = store.Close() }()
+
+	profiles := profile.NewService(store)
+	_, err = profiles.Save(ctx, domain.Profile{
+		ID: "p1", Name: "P1", Enabled: true, RouteMode: domain.RouteModeSplit,
+		Endpoints: []domain.Endpoint{{Name: "v", Address: "example.com", Port: 443, Protocol: domain.ProtocolVLESS, ServerTag: "proxy", UUID: "11111111-2222-3333-4444-555555555555", ServerName: "sni.example.com", RealityPublicKey: "pk", RealityShortID: "ab12"}},
+		PreferredID:     "v",
+		ReconnectPolicy: domain.ReconnectPolicy{MaxRetries: 1, BaseBackoff: time.Second, MaxBackoff: 2 * time.Second},
+	})
+	require.NoError(t, err)
+
+	s := NewService(store, profiles, nil)
+	future := time.Now().UTC().Add(24 * time.Hour)
+	sub, err := s.Create(ctx, domain.Subscription{Name: "a", UserID: "u1", ProfileIDs: []string{"p1"}, ExpiresAt: &future})
+	require.NoError(t, err)
+
+	renewed, isNew, err := s.RenewOrCreate(ctx, "u1", 10, []string{"p1"}, "n", "test")
+	require.NoError(t, err)
+	require.False(t, isNew)
+	require.Equal(t, sub.ID, renewed.ID)
+	require.NotNil(t, renewed.ExpiresAt)
+	require.True(t, renewed.ExpiresAt.After(future))
+}
+
+func TestRenewOrCreate_ExpiredSubscription(t *testing.T) {
+	ctx := context.Background()
+	store, err := sqlite.Open(ctx, filepath.Join(t.TempDir(), "subs-renew-expired.db"))
+	require.NoError(t, err)
+	defer func() { _ = store.Close() }()
+
+	profiles := profile.NewService(store)
+	_, err = profiles.Save(ctx, domain.Profile{
+		ID: "p1", Name: "P1", Enabled: true, RouteMode: domain.RouteModeSplit,
+		Endpoints: []domain.Endpoint{{Name: "v", Address: "example.com", Port: 443, Protocol: domain.ProtocolVLESS, ServerTag: "proxy", UUID: "11111111-2222-3333-4444-555555555555", ServerName: "sni.example.com", RealityPublicKey: "pk", RealityShortID: "ab12"}},
+		PreferredID:     "v",
+		ReconnectPolicy: domain.ReconnectPolicy{MaxRetries: 1, BaseBackoff: time.Second, MaxBackoff: 2 * time.Second},
+	})
+	require.NoError(t, err)
+
+	s := NewService(store, profiles, nil)
+	expired := time.Now().UTC().Add(-time.Hour)
+	sub, err := s.Create(ctx, domain.Subscription{Name: "e", UserID: "u1", ProfileIDs: []string{"p1"}, ExpiresAt: &expired})
+	require.NoError(t, err)
+
+	_, _, err = s.BuildContentByToken(ctx, sub.Token)
+	require.Error(t, err)
+
+	renewed, isNew, err := s.RenewOrCreate(ctx, "u1", 30, []string{"p1"}, "n", "test")
+	require.NoError(t, err)
+	require.False(t, isNew)
+	require.Equal(t, sub.ID, renewed.ID)
+	require.NotNil(t, renewed.ExpiresAt)
+	require.True(t, renewed.ExpiresAt.After(time.Now().UTC()))
+
+	content, _, err := s.BuildContentByToken(ctx, sub.Token)
+	require.NoError(t, err)
+	require.Contains(t, content, "vless://")
+}
+
+func TestRenewOrCreate_RevokedSubscription(t *testing.T) {
+	ctx := context.Background()
+	store, err := sqlite.Open(ctx, filepath.Join(t.TempDir(), "subs-renew-revoked.db"))
+	require.NoError(t, err)
+	defer func() { _ = store.Close() }()
+
+	profiles := profile.NewService(store)
+	_, err = profiles.Save(ctx, domain.Profile{
+		ID: "p1", Name: "P1", Enabled: true, RouteMode: domain.RouteModeSplit,
+		Endpoints: []domain.Endpoint{{Name: "v", Address: "example.com", Port: 443, Protocol: domain.ProtocolVLESS, ServerTag: "proxy", UUID: "11111111-2222-3333-4444-555555555555", ServerName: "sni.example.com", RealityPublicKey: "pk", RealityShortID: "ab12"}},
+		PreferredID:     "v",
+		ReconnectPolicy: domain.ReconnectPolicy{MaxRetries: 1, BaseBackoff: time.Second, MaxBackoff: 2 * time.Second},
+	})
+	require.NoError(t, err)
+
+	s := NewService(store, profiles, nil)
+	sub, err := s.Create(ctx, domain.Subscription{Name: "r", UserID: "u1", ProfileIDs: []string{"p1"}})
+	require.NoError(t, err)
+	require.NoError(t, s.Revoke(ctx, sub.ID))
+
+	_, _, err = s.BuildContentByToken(ctx, sub.Token)
+	require.Error(t, err)
+
+	renewed, isNew, err := s.RenewOrCreate(ctx, "u1", 30, []string{"p1"}, "n", "test")
+	require.NoError(t, err)
+	require.False(t, isNew)
+	require.Equal(t, sub.ID, renewed.ID)
+	require.False(t, renewed.Revoked)
+
+	content, _, err := s.BuildContentByToken(ctx, sub.Token)
+	require.NoError(t, err)
+	require.Contains(t, content, "vless://")
+}
+
+func TestRenewOrCreate_NoSubscription(t *testing.T) {
+	ctx := context.Background()
+	store, err := sqlite.Open(ctx, filepath.Join(t.TempDir(), "subs-renew-none.db"))
+	require.NoError(t, err)
+	defer func() { _ = store.Close() }()
+
+	profiles := profile.NewService(store)
+	_, err = profiles.Save(ctx, domain.Profile{
+		ID: "p1", Name: "P1", Enabled: true, RouteMode: domain.RouteModeSplit,
+		Endpoints: []domain.Endpoint{{Name: "v", Address: "example.com", Port: 443, Protocol: domain.ProtocolVLESS, ServerTag: "proxy", UUID: "11111111-2222-3333-4444-555555555555", ServerName: "sni.example.com", RealityPublicKey: "pk", RealityShortID: "ab12"}},
+		PreferredID:     "v",
+		ReconnectPolicy: domain.ReconnectPolicy{MaxRetries: 1, BaseBackoff: time.Second, MaxBackoff: 2 * time.Second},
+	})
+	require.NoError(t, err)
+
+	s := NewService(store, profiles, nil)
+	created, isNew, err := s.RenewOrCreate(ctx, "u1", 30, []string{"p1"}, "vpn", "test")
+	require.NoError(t, err)
+	require.True(t, isNew)
+	require.NotEmpty(t, created.ID)
+	require.NotEmpty(t, created.Token)
+}
+
+func TestRenewKeepsSameToken(t *testing.T) {
+	ctx := context.Background()
+	store, err := sqlite.Open(ctx, filepath.Join(t.TempDir(), "subs-renew-token.db"))
+	require.NoError(t, err)
+	defer func() { _ = store.Close() }()
+
+	profiles := profile.NewService(store)
+	_, err = profiles.Save(ctx, domain.Profile{
+		ID: "p1", Name: "P1", Enabled: true, RouteMode: domain.RouteModeSplit,
+		Endpoints: []domain.Endpoint{{Name: "v", Address: "example.com", Port: 443, Protocol: domain.ProtocolVLESS, ServerTag: "proxy", UUID: "11111111-2222-3333-4444-555555555555", ServerName: "sni.example.com", RealityPublicKey: "pk", RealityShortID: "ab12"}},
+		PreferredID:     "v",
+		ReconnectPolicy: domain.ReconnectPolicy{MaxRetries: 1, BaseBackoff: time.Second, MaxBackoff: 2 * time.Second},
+	})
+	require.NoError(t, err)
+
+	s := NewService(store, profiles, nil)
+	expired := time.Now().UTC().Add(-time.Hour)
+	sub, err := s.Create(ctx, domain.Subscription{Name: "x", UserID: "u1", ProfileIDs: []string{"p1"}, ExpiresAt: &expired})
+	require.NoError(t, err)
+	oldToken := sub.Token
+
+	_, _, err = s.BuildContentByToken(ctx, oldToken)
+	require.Error(t, err)
+
+	_, isNew, err := s.RenewOrCreate(ctx, "u1", 30, []string{"p1"}, "vpn", "test")
+	require.NoError(t, err)
+	require.False(t, isNew)
+
+	content, _, err := s.BuildContentByToken(ctx, oldToken)
+	require.NoError(t, err)
+	require.Contains(t, content, "vless://")
 }
 

@@ -54,11 +54,13 @@ type SubscriptionService interface {
 	Rotate(ctx context.Context, id string) (domain.Subscription, error)
 	BuildContentByToken(ctx context.Context, token string) (string, domain.Subscription, error)
 	IssueLink30Days(ctx context.Context, userID string, profileIDs []string, name string, source string) (domain.Subscription, error)
+	RenewOrCreate(ctx context.Context, userID string, days int, profileIDs []string, name, source string) (sub domain.Subscription, isNew bool, err error)
 	ListIssues(ctx context.Context, userID string, limit int) ([]domain.SubscriptionIssue, error)
 	AssignProfiles(ctx context.Context, subscriptionID string, profileIDs []string) error
 	GetActiveByUser(ctx context.Context, userID string) (domain.Subscription, error)
 	ExtendActiveByUser(ctx context.Context, userID string, days int) (domain.Subscription, error)
 	BlockActiveByUser(ctx context.Context, userID string) (domain.Subscription, error)
+	CleanupExpired(ctx context.Context, retentionDays int) (int64, error)
 }
 
 type Server struct {
@@ -216,6 +218,7 @@ func (s *Server) Handler() http.Handler {
 	admin.HandleFunc("/v1/issue/apply-to-3xui", s.handleIssueApplyTo3XUI)
 	admin.HandleFunc("/v1/internal/sync/heartbeat", s.handleSyncHeartbeat)
 	admin.HandleFunc("/v1/internal/sync/failure", s.handleSyncFailure)
+	admin.HandleFunc("/v1/internal/cleanup", s.handleCleanup)
 	admin.HandleFunc("/v1/subscriptions/bind-profile", s.handleSubscriptionBindProfile)
 	admin.HandleFunc("/v1/subscriptions/lifecycle", s.handleSubscriptionLifecycle)
 	admin.HandleFunc("/admin/issue/link", s.handleIssueLink)
@@ -224,6 +227,7 @@ func (s *Server) Handler() http.Handler {
 	admin.HandleFunc("/admin/issue/apply-to-3xui", s.handleIssueApplyTo3XUI)
 	admin.HandleFunc("/admin/internal/sync/heartbeat", s.handleSyncHeartbeat)
 	admin.HandleFunc("/admin/internal/sync/failure", s.handleSyncFailure)
+	admin.HandleFunc("/admin/internal/cleanup", s.handleCleanup)
 	admin.HandleFunc("/admin/subscriptions/bind-profile", s.handleSubscriptionBindProfile)
 	admin.HandleFunc("/admin/subscriptions/lifecycle", s.handleSubscriptionLifecycle)
 	admin.HandleFunc("/admin/integration/3xui/limit-ip", s.handle3XUILimitIP)
@@ -243,6 +247,27 @@ func (s *Server) Handler() http.Handler {
 	root.Handle("/v1/", s.withAuthScope("v1", s.withDeprecated(admin)))
 	root.Handle("/api/v1/", s.withAuthScope("v1", admin))
 	return s.withObservability(s.withRateLimit(root))
+}
+
+func (s *Server) handleCleanup(w http.ResponseWriter, r *http.Request) {
+	if s.subs == nil {
+		writeError(w, http.StatusNotImplemented, perrors.New("VPN_SUBS_001", "subscriptions are not configured"))
+		return
+	}
+	if r.Method != http.MethodPost {
+		writeError(w, http.StatusMethodNotAllowed, perrors.New("VPN_API_METHOD_001", "method not allowed"))
+		return
+	}
+	var req struct {
+		RetentionDays int `json:"retentionDays"`
+	}
+	_ = json.NewDecoder(io.LimitReader(r.Body, 1<<20)).Decode(&req)
+	deleted, err := s.subs.CleanupExpired(r.Context(), req.RetentionDays)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"ok": true, "deleted": deleted})
 }
 
 func (s *Server) handleProfileScoped(w http.ResponseWriter, r *http.Request) {
@@ -613,6 +638,20 @@ func (s *Server) handleIssueLink(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		telemetry.Default().SubscriptionIssueTotal.WithLabelValues("failure").Inc()
 		writeError(w, http.StatusBadRequest, err)
+		return
+	}
+	// If IssueLink30Days renewed an existing subscription, there is no new token to return.
+	// In that case we treat this as a renewal response and skip issue-time apply/verify steps.
+	if strings.TrimSpace(item.Token) == "" {
+		resp := v1.IssueLinkResponse{
+			Subscription:  item,
+			URL:           "",
+			Days:          30,
+			AppliedTo3XUI: false,
+			ApplyError:    "subscription renewed; existing token is unchanged (url is not re-issued)",
+		}
+		telemetry.Default().SubscriptionIssueTotal.WithLabelValues("success").Inc()
+		writeJSON(w, http.StatusOK, resp)
 		return
 	}
 	revokeOnFailure := func(code string, message string, rootErr error) {
@@ -1035,7 +1074,7 @@ func (s *Server) handleSubscriptionLifecycle(w http.ResponseWriter, r *http.Requ
 	}
 	switch action {
 	case "renew":
-		item, err := s.subs.ExtendActiveByUser(r.Context(), userID, req.Days)
+		item, _, err := s.subs.RenewOrCreate(r.Context(), userID, req.Days, nil, "", "api:lifecycle")
 		if err != nil {
 			writeError(w, http.StatusBadRequest, err)
 			return
@@ -1674,19 +1713,14 @@ func (s *Server) withRateLimit(next http.Handler) http.Handler {
 }
 
 func (s *Server) compactRateLimitMaps(now time.Time, window time.Duration) {
-	const maxRateEntries = 4096
-	if len(s.rateByIP) > maxRateEntries {
-		for key, entry := range s.rateByIP {
-			if now.Sub(entry.WindowStart) >= window {
-				delete(s.rateByIP, key)
-			}
+	for key, entry := range s.rateByIP {
+		if now.Sub(entry.WindowStart) >= window {
+			delete(s.rateByIP, key)
 		}
 	}
-	if len(s.publicRateByKey) > maxRateEntries {
-		for key, entry := range s.publicRateByKey {
-			if now.Sub(entry.WindowStart) >= window {
-				delete(s.publicRateByKey, key)
-			}
+	for key, entry := range s.publicRateByKey {
+		if now.Sub(entry.WindowStart) >= window {
+			delete(s.publicRateByKey, key)
 		}
 	}
 }
@@ -1770,7 +1804,9 @@ func requestRemoteAddr(r *http.Request) string {
 func (s *Server) refreshTrafficMetrics(items []domain.Profile) {
 	s.trafficMu.Lock()
 	defer s.trafficMu.Unlock()
+	activeIDs := make(map[string]bool, len(items))
 	for _, p := range items {
+		activeIDs[p.ID] = true
 		prev := s.lastTraffic[p.ID]
 		if p.TrafficUsedUp > prev.up {
 			telemetry.Default().TrafficBytes.WithLabelValues("tx").Add(float64(p.TrafficUsedUp - prev.up))
@@ -1782,6 +1818,11 @@ func (s *Server) refreshTrafficMetrics(items []domain.Profile) {
 			up   int64
 			down int64
 		}{up: p.TrafficUsedUp, down: p.TrafficUsedDown}
+	}
+	for id := range s.lastTraffic {
+		if !activeIDs[id] {
+			delete(s.lastTraffic, id)
+		}
 	}
 }
 

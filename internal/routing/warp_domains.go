@@ -22,9 +22,19 @@ func DefaultWarpDomains() WarpDomainsFile {
 			"linkedin.com", "medium.com", "quora.com", "discord.com", "discord.gg",
 			"spotify.com", "soundcloud.com", "twitch.tv", "notion.so", "archive.org",
 			"patreon.com", "openai.com", "chatgpt.com", "claude.ai",
+			"anthropic.com",
+			"youtube.com", "googlevideo.com", "ytimg.com",
+			"tiktok.com", "tiktokcdn.com",
+			"netflix.com", "nflxvideo.net",
+			"canva.com", "figma.com", "miro.com",
+			"slack.com", "zoom.us", "zoom.com",
+			"reddit.com", "redd.it", "redditcdn.com",
+			"pinterest.com", "tumblr.com",
+			"bbc.com", "bbc.co.uk",
+			"docker.com", "docker.io", "githubusercontent.com",
 		},
-		GeositeTags: []string{"openai", "google-ai"},
-		UpdatedAt:   time.Date(2025, 1, 1, 0, 0, 0, 0, time.UTC),
+		GeositeTags: []string{"openai", "google-ai", "meta", "netflix", "docker"},
+		UpdatedAt:   time.Date(2026, 4, 1, 0, 0, 0, 0, time.UTC),
 	}
 }
 

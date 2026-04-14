@@ -58,6 +58,39 @@ func (f *fakeSubs) IssueLink30Days(_ context.Context, userID string, profileIDs 
 	f.item = item
 	return item, nil
 }
+func (f *fakeSubs) RenewOrCreate(_ context.Context, userID string, days int, profileIDs []string, name, _ string) (domain.Subscription, bool, error) {
+	if days <= 0 {
+		days = 30
+	}
+	if f.item.UserID == userID && f.item.ID != "" {
+		base := time.Now().UTC()
+		if f.item.ExpiresAt != nil && f.item.ExpiresAt.After(base) {
+			base = f.item.ExpiresAt.UTC()
+		}
+		exp := base.Add(time.Duration(days) * 24 * time.Hour)
+		f.item.ExpiresAt = &exp
+		f.item.Status = "active"
+		f.item.Revoked = false
+		// Token is not re-issued when renewing.
+		f.item.Token = ""
+		return f.item, false, nil
+	}
+	if len(profileIDs) == 0 {
+		profileIDs = []string{"p1"}
+	}
+	item := domain.Subscription{
+		ID:         "sub-new",
+		Name:       name,
+		UserID:     userID,
+		Token:      "tok-new",
+		ProfileIDs: profileIDs,
+		Status:     "active",
+		CreatedAt:  time.Now().UTC(),
+		UpdatedAt:  time.Now().UTC(),
+	}
+	f.item = item
+	return item, true, nil
+}
 func (f *fakeSubs) ListIssues(_ context.Context, userID string, _ int) ([]domain.SubscriptionIssue, error) {
 	return []domain.SubscriptionIssue{{
 		ID:             "issue-1",
@@ -94,6 +127,7 @@ func (f *fakeSubs) BlockActiveByUser(_ context.Context, userID string) (domain.S
 	f.item.Status = "revoked"
 	return f.item, nil
 }
+func (f *fakeSubs) CleanupExpired(_ context.Context, _ int) (int64, error) { return 0, nil }
 
 func TestAdminAndPublicRouteSeparation(t *testing.T) {
 	logger, err := logging.New("")

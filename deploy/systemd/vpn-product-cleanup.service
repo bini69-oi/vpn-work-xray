@@ -1,0 +1,10 @@
+[Unit]
+Description=Cleanup old vpn-product data
+After=network-online.target vpn-productd.service
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+EnvironmentFile=-/etc/vpn-product/cleanup.env
+ExecStart=/bin/bash -c 'curl -sf -X POST -H "Authorization: Bearer ${VPN_PRODUCT_API_TOKEN}" -H "Content-Type: application/json" --data "{\"retentionDays\":${VPN_PRODUCT_CLEANUP_RETENTION_DAYS:-30}}" "${VPN_PRODUCT_BASE_URL:-http://127.0.0.1:8080}/v1/internal/cleanup"'
+

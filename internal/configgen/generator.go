@@ -285,15 +285,34 @@ func (g *Generator) buildVPNRouting(profile domain.Profile, assets routing.Asset
 		geo := vpnrouting.GeoAssets{GeoSite: assets.GeoSite, GeoIP: assets.GeoIP}
 		wd := vpnrouting.LoadWarpDomainsOrDefault(vpnrouting.WarpDomainsPath())
 		rules := vpnrouting.BuildRUPresetRules(geo, wd, warnings)
+		if strings.TrimSpace(os.Getenv("VPN_PRODUCT_BLOCK_QUIC")) == "1" {
+			rules = append(rules, map[string]any{
+				"type":        "field",
+				"comment":     "Block QUIC to force TCP/TLS fallback",
+				"port":        "443",
+				"network":     "udp",
+				"outboundTag": "block",
+			})
+		}
 		return map[string]any{
 			"domainStrategy": "IPIfNonMatch",
 			"domainMatcher":  "hybrid",
 			"rules":          rules,
 		}
 	}
+	rules := g.buildRoutingRules(profile, assets, warnings)
+	if strings.TrimSpace(os.Getenv("VPN_PRODUCT_BLOCK_QUIC")) == "1" {
+		rules = append(rules, map[string]any{
+			"type":        "field",
+			"comment":     "Block QUIC to force TCP/TLS fallback",
+			"port":        "443",
+			"network":     "udp",
+			"outboundTag": "block",
+		})
+	}
 	return map[string]any{
 		"domainStrategy": "IPIfNonMatch",
-		"rules":          g.buildRoutingRules(profile, assets, warnings),
+		"rules":          rules,
 	}
 }
 

@@ -40,6 +40,16 @@ fi
 
 sha256sum "${archive_path}" > "${archive_path}.sha256"
 
+BACKUP_ENCRYPT_KEY="${BACKUP_ENCRYPT_KEY:-}"
+if [[ -n "${BACKUP_ENCRYPT_KEY}" ]]; then
+    gpg --batch --yes --passphrase "${BACKUP_ENCRYPT_KEY}" \
+        --symmetric --cipher-algo AES256 \
+        -o "${archive_path}.gpg" "${archive_path}"
+    rm -f "${archive_path}"
+    archive_path="${archive_path}.gpg"
+    sha256sum "${archive_path}" > "${archive_path}.sha256"
+fi
+
 # Keep recent backups only.
 find "${BACKUP_DIR}" -type f -name 'vpn-migration-*.tar.gz' -mtime +"${RETENTION_DAYS}" -delete
 find "${BACKUP_DIR}" -type f -name 'vpn-migration-*.tar.gz.sha256' -mtime +"${RETENTION_DAYS}" -delete

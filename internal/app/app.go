@@ -4,6 +4,8 @@ import (
 	"context"
 	"os"
 	"path/filepath"
+	"strconv"
+	"strings"
 	"time"
 
 	"github.com/xtls/xray-core/internal/configgen"
@@ -11,6 +13,7 @@ import (
 	"github.com/xtls/xray-core/internal/delivery"
 	"github.com/xtls/xray-core/internal/diagnostics"
 	"github.com/xtls/xray-core/internal/health"
+	"github.com/xtls/xray-core/internal/integration/xui"
 	"github.com/xtls/xray-core/internal/logging"
 	"github.com/xtls/xray-core/internal/profile"
 	"github.com/xtls/xray-core/internal/reconnect"
@@ -70,6 +73,17 @@ func Build(ctx context.Context, opts Options) (*App, error) {
 	reconnectEngine := reconnect.NewEngine(time.Now().UnixNano())
 	conn := connection.NewManager(profiles, gen, runtime, reconnectEngine, log.WithModule("connection"), log.WithModule("configgen"))
 	diag := diagnostics.NewService(conn, health.StaticProber{Default: health.ProbeResult{Healthy: true}}, profiles, store, assetsDir)
+	xuiDBPath := strings.TrimSpace(os.Getenv("VPN_PRODUCT_3XUI_DB_PATH"))
+	if xuiDBPath == "" {
+		xuiDBPath = "/etc/x-ui/x-ui.db"
+	}
+	xuiInboundPort := 8443
+	if raw := strings.TrimSpace(os.Getenv("VPN_PRODUCT_3XUI_INBOUND_PORT")); raw != "" {
+		if n, convErr := strconv.Atoi(raw); convErr == nil && n > 0 {
+			xuiInboundPort = n
+		}
+	}
+	diag.SetXUIChecker(xui.NewChecker(xuiDBPath, xuiInboundPort))
 	subs := subscription.NewService(store, profiles, delivery.NewService())
 
 	return &App{

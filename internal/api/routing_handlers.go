@@ -60,6 +60,9 @@ func (s *Server) handleRoutingReload(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if err := s.connection.Connect(r.Context(), st.ActiveProfile); err != nil {
+		if rb, ok := s.connection.(interface{ RollbackLastGood(ctx context.Context) error }); ok {
+			_ = rb.RollbackLastGood(r.Context())
+		}
 		writeError(w, http.StatusBadGateway, err)
 		return
 	}
