@@ -179,19 +179,21 @@ sudo systemctl status vpn-geodata-update.timer --no-pager || true
 
 ## Telegram bot (optional)
 
-Bot lives in `telegram-bot/`. Typical run (example):
+Bot lives in `bot/` (aiogram 3). Typical run (example):
 
 ```bash
-cd telegram-bot
+cd bot
 python3 -m venv .venv
 source .venv/bin/activate
 pip install -r requirements.txt
 
-# create telegram-bot/.env from .env.example, then:
-python bot.py
+# create bot/.env from .env.example, then:
+python -m vpn_bot
 ```
 
-Set `TELEGRAM_MINIAPP_URL` in `telegram-bot/.env` to the **same HTTPS origin** as the Mini App (`WEBAPP_URL` in `telegram-miniapp/.env`). The Python bot adds a **WebApp** menu button; the Node process is normally **API + static only** (no second bot polling unless `START_TELEGRAM_BOT_POLLING=1`).
+The legacy `python-telegram-bot` tree is preserved under `archive/telegram-bot-legacy/`.
+
+For the Mini App, set the **Menu Button / Mini App URL** in @BotFather to the **same HTTPS origin** as `WEBAPP_URL` in `telegram-miniapp/.env`. The Node process is normally **API + static only** (no second bot polling unless `START_TELEGRAM_BOT_POLLING=1`). Extend `bot/` if you want an inline **WebApp** keyboard button.
 
 ### Mini App (`telegram-miniapp/`)
 

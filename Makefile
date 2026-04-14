@@ -1,4 +1,5 @@
 GO ?= go
+PYTHON ?= python3
 GOLANGCI_LINT ?= $(shell $(GO) env GOPATH)/bin/golangci-lint
 MIN_COVERAGE ?= 80.0
 XRAY_LOCATION_ASSET ?= var/vpn-product-predeploy3/assets
@@ -14,7 +15,7 @@ COVERPKGS ?= ./internal/configgen ./internal/connection
 LINT_TARGETS ?= ./internal/... $(CMD_PKGS)
 ALL_GO_PKGS ?= ./...
 
-.PHONY: test test-all bench build lint cover verify verify-quick secret-scan ci
+.PHONY: test test-all bench build lint cover verify verify-quick secret-scan ci bot bot-venv
 
 build:
 	$(GO) build -trimpath -ldflags="-s -w" -o vpn-productd ./cmd/vpn-productd
@@ -55,3 +56,11 @@ verify:
 	$(GO) tool cover -func=coverage.out | awk -v min="$(MIN_COVERAGE)" '/^total:/ {gsub("%","",$$3); cov=$$3+0; if (cov < min) {printf("coverage %.2f%% is below minimum %.2f%%\n", cov, min); exit 1} else {printf("coverage %.2f%% (min %.2f%%)\n", cov, min)}}'
 
 ci: verify
+
+# Telegram-бот (aiogram) в каталоге bot/ — не из корня репозитория
+bot-venv:
+	cd bot && $(PYTHON) -m venv .venv && ./.venv/bin/pip install -U pip && ./.venv/bin/pip install -r requirements.txt
+
+bot:
+	@test -f bot/.venv/bin/python || (echo "Сначала выполни: make bot-venv" && exit 1)
+	cd bot && ./.venv/bin/python -m vpn_bot
