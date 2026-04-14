@@ -63,5 +63,8 @@ deploy/backups/
 # Temporary downloaded assets in local var environments
 var/**/assets/*.tmp
 
+# Product runtime data directory (contains db/configs/assets)
+var/
+
 # Telegram bot local secrets
 telegram-bot/.env
