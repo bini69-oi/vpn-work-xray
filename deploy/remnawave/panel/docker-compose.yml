@@ -94,7 +94,7 @@ services:
     environment:
       - APP_PORT=3010
       - REMNAWAVE_PANEL_URL=http://remnawave:3000
-      - REMNAWAVE_API_TOKEN=TODO_CREATE_IN_PANEL_UI
+      - REMNAWAVE_API_TOKEN=${REMNAWAVE_API_TOKEN}
 
   caddy:
     image: caddy:2-alpine
