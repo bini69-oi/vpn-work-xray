@@ -1,0 +1,16 @@
+[Unit]
+Description=Remnawave Postgres backup (pg_dump + tar.gz + sha256)
+Wants=network-online.target
+After=network-online.target docker.service
+Requires=docker.service
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/bin/remnawave-backup.sh
+
+# Hardening (minimal; keep compatible with docker CLI usage)
+NoNewPrivileges=true
+PrivateTmp=true
+
+[Install]
+WantedBy=multi-user.target

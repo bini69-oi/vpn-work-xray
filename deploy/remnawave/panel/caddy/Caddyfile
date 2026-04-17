@@ -1,0 +1,20 @@
+# Remnawave reverse proxy (Caddy)
+# ВАЖНО: замените PANEL_DOMAIN и SUB_DOMAIN на реальные домены
+# ПЕРЕД запуском Caddy.
+# Пример:
+# https://panel.example.com { ... }
+# https://sub.example.com { ... }
+# Caddy сам получит SSL через Let's Encrypt, если домены
+# правильно резолвятся на IP сервера панели.
+#
+# Источник примеров: https://docs.rw/docs/install/subscription-page/bundled (секция Caddy)
+#
+# CHECK: при использовании "Caddy with security" может понадобиться доп. конфигурация из docs.rw.
+
+https://PANEL_DOMAIN {
+  reverse_proxy * http://remnawave:3000
+}
+
+https://SUB_DOMAIN {
+  reverse_proxy * http://remnawave-subscription-page:3010
+}

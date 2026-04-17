@@ -1,0 +1,14 @@
+services:
+  remnanode:
+    container_name: remnanode
+    hostname: remnanode
+    image: remnawave/node:latest
+    restart: always
+    network_mode: host
+    env_file:
+      - .env
+
+    # CHECK: при использовании Node Plugins (β) может потребоваться:
+    #   cap_add:
+    #     - NET_ADMIN
+    # и ulimits. См. https://docs.rw/docs/learn/node-plugins/

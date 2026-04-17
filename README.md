@@ -2,6 +2,11 @@
 
 # VPN Product
 
+## 🚧 Миграция на Remnawave в процессе
+
+Мы переходим с `vpn-productd`/3x-ui на **Remnawave Panel + Remnawave Node**.  
+Текущий статус и план: [MIGRATION_TO_REMNAWAVE.md](MIGRATION_TO_REMNAWAVE.md)
+
 **Высокопроизводительный VPN-сервис на базе Xray-core**
 
 Управление подписками • Интеграция с 3x-ui • Telegram-бот и Mini App • Маршрутизация и WARP
@@ -35,6 +40,8 @@ VPN Product — слой вокруг [Xray-core](https://github.com/XTLS/Xray-c
 ## Архитектура
 
 См. подробнее [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
+
+> ⚠️ Пометка: этот раздел **устарел** и будет обновлён на **этапе 6** миграции на Remnawave.
 
 ```
 ┌─────────────────────┐     ┌──────────────────┐     ┌────────────┐
