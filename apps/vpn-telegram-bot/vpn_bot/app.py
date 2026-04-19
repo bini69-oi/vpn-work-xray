@@ -17,7 +17,7 @@ from vpn_bot.database.db import init_db
 from vpn_bot.handlers import admin, purchase, referral, start, subscription, support
 from vpn_bot.middlewares.auth import AuthMiddleware
 from vpn_bot.middlewares.throttling import ThrottlingMiddleware
-from vpn_bot.services.api_client import VPNApiClient, VPNBackend
+from vpn_bot.services.api_client import VPNBackend
 from vpn_bot.services.remnawave_client import RemnawaveApiClient
 
 logging.basicConfig(
@@ -28,25 +28,29 @@ log = logging.getLogger(__name__)
 
 
 def _build_backend_client(session: aiohttp.ClientSession) -> VPNBackend | None:
-    if settings.vpn_backend_normalized() == "remnawave":
-        if not settings.remnawave_api_token.strip() or not settings.remnawave_panel_url.strip():
-            log.warning("VPN_BACKEND=remnawave: задай REMNAWAVE_API_TOKEN и REMNAWAVE_PANEL_URL")
-            return None
-        squads = settings.remnawave_internal_squad_uuids()
-        if not squads:
-            log.warning(
-                "VPN_BACKEND=remnawave: REMNAWAVE_INTERNAL_SQUAD_UUIDS пусто — создание пользователя в панели не удастся",
-            )
-        return RemnawaveApiClient(
-            session,
-            settings.remnawave_panel_url,
-            settings.remnawave_api_token,
-            caddy_token=settings.remnawave_caddy_token,
-            internal_squad_uuids=squads,
+    """Construct the Remnawave Panel client from settings, or `None` if not
+    configured. The bot stays operational without the backend (the user just
+    sees `service_unavailable` for any VPN-related action).
+    """
+    if not settings.remnawave_api_token.strip() or not settings.remnawave_panel_url.strip():
+        log.warning(
+            "Remnawave не настроен: задай REMNAWAVE_PANEL_URL и REMNAWAVE_API_TOKEN в "
+            "apps/vpn-telegram-bot/.env (см. .env.example).",
         )
-    if settings.vpn_api_token.strip():
-        return VPNApiClient(session, settings.vpn_api_url, settings.vpn_api_token)
-    return None
+        return None
+    squads = settings.remnawave_internal_squad_uuids()
+    if not squads:
+        log.warning(
+            "REMNAWAVE_INTERNAL_SQUAD_UUIDS пусто — создание пользователя в панели не удастся, "
+            "только продление существующих.",
+        )
+    return RemnawaveApiClient(
+        session,
+        settings.remnawave_panel_url,
+        settings.remnawave_api_token,
+        caddy_token=settings.remnawave_caddy_token,
+        internal_squad_uuids=squads,
+    )
 
 
 _GET_ME_ATTEMPTS = 5

@@ -3,7 +3,7 @@ from __future__ import annotations
 import json
 import logging
 import re
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 from typing import Any
 
 import aiohttp
@@ -173,7 +173,7 @@ class RemnawaveApiClient:
             }
         if not self._squads:
             return 503, {"message": "REMNAWAVE_INTERNAL_SQUAD_UUIDS is not configured"}
-        exp = (datetime.now(timezone.utc) + timedelta(days=30)).isoformat().replace("+00:00", "Z")
+        exp = (datetime.now(UTC) + timedelta(days=30)).isoformat().replace("+00:00", "Z")
         body: dict[str, Any] = {
             "username": _username_for_telegram(tid),
             "expireAt": exp,
@@ -211,12 +211,12 @@ class RemnawaveApiClient:
             if isinstance(raw_exp, str) and raw_exp.strip():
                 exp_dt = datetime.fromisoformat(raw_exp.replace("Z", "+00:00"))
             else:
-                exp_dt = datetime.now(timezone.utc)
+                exp_dt = datetime.now(UTC)
         except ValueError:
-            exp_dt = datetime.now(timezone.utc)
+            exp_dt = datetime.now(UTC)
         if exp_dt.tzinfo is None:
-            exp_dt = exp_dt.replace(tzinfo=timezone.utc)
-        new_exp = (max(exp_dt, datetime.now(timezone.utc)) + timedelta(days=int(days))).isoformat().replace(
+            exp_dt = exp_dt.replace(tzinfo=UTC)
+        new_exp = (max(exp_dt, datetime.now(UTC)) + timedelta(days=int(days))).isoformat().replace(
             "+00:00", "Z"
         )
         patch: dict[str, Any] = {"uuid": uid, "expireAt": new_exp}
@@ -259,9 +259,6 @@ class RemnawaveApiClient:
         if not sub_url:
             return 404, {"links": {}}
         return 200, {"links": {"subscription": sub_url}}
-
-    async def get_profile_stats(self) -> tuple[int, dict[str, Any]]:
-        return 501, {"message": "profile stats batch not used for remnawave"}
 
     async def get_health(self) -> tuple[int, dict[str, Any]]:
         return await self._request("GET", "/system/health")

@@ -32,8 +32,7 @@ def _isolate_env(monkeypatch: pytest.MonkeyPatch) -> None:
     """
     for key in list(os.environ):
         if (
-            key.startswith("VPN_")
-            or key.startswith("REMNAWAVE_")
+            key.startswith(("VPN_", "REMNAWAVE_"))
             or key in {
                 "BOT_TOKEN",
                 "TELEGRAM_BOT_TOKEN",

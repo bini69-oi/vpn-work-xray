@@ -11,8 +11,8 @@ _BOT_ROOT = Path(__file__).resolve().parents[2]
 
 def _parse_id_list(raw: str) -> list[int]:
     out: list[int] = []
-    for part in (raw or "").split(","):
-        part = part.strip()
+    for raw_part in (raw or "").split(","):
+        part = raw_part.strip()
         if not part:
             continue
         if part.isdigit() or (part.startswith("-") and part[1:].isdigit()):
@@ -23,25 +23,20 @@ def _parse_id_list(raw: str) -> list[int]:
     return out
 
 
-def _parse_profile_ids(raw: str) -> list[str] | None:
-    raw = (raw or "").strip()
-    if not raw:
-        return None
-    ids = [p.strip() for p in raw.split(",") if p.strip()]
-    return ids if ids else None
-
-
 class Settings(BaseSettings):
+    """Конфигурация Telegram-бота (Remnawave-only)."""
+
     model_config = SettingsConfigDict(
         env_file=_BOT_ROOT / ".env",
         env_file_encoding="utf-8",
         extra="ignore",
     )
 
-    # Совместимость с legacy-ботом: TELEGRAM_BOT_TOKEN, VPN_PRODUCT_BASE_URL, VPN_PRODUCT_API_TOKEN, …
+    # --- Telegram ---
     bot_token: str = Field(
         validation_alias=AliasChoices("BOT_TOKEN", "TELEGRAM_BOT_TOKEN"),
     )
+    bot_username: str = Field(default="", validation_alias="BOT_USERNAME")
 
     admin_ids_csv: str = Field(
         default="",
@@ -49,25 +44,22 @@ class Settings(BaseSettings):
     )
     allowed_ids_csv: str = Field(default="", validation_alias="ALLOWED_TELEGRAM_IDS")
 
-    # productd (по умолчанию) или remnawave — см. VPN_BACKEND
-    vpn_api_url: str = Field(
-        default="http://127.0.0.1:8080",
-        validation_alias=AliasChoices("VPN_API_URL", "VPN_PRODUCT_BASE_URL"),
-    )
-    vpn_api_token: str = Field(
+    # HTTP(S)/SOCKS5 proxy для api.telegram.org (если сеть режет Telegram).
+    telegram_proxy_url: str = Field(
         default="",
-        validation_alias=AliasChoices("VPN_API_TOKEN", "VPN_PRODUCT_API_TOKEN"),
+        validation_alias=AliasChoices("TELEGRAM_PROXY", "TELEGRAM_HTTPS_PROXY"),
     )
-    vpn_profile_ids_raw: str = Field(default="", validation_alias="VPN_PROFILE_IDS")
 
-    # --- Remnawave Panel API (https://docs.rw + community SDK пути /api/users …) ---
-    vpn_backend: str = Field(default="productd", validation_alias="VPN_BACKEND")
+    # --- Remnawave Panel API ---
+    # Публичный URL панели без `/api` — клиент сам допишет путь.
     remnawave_panel_url: str = Field(
         default="",
         validation_alias=AliasChoices("REMNAWAVE_PANEL_URL", "REMNAWAVE_BASE_URL"),
     )
     remnawave_api_token: str = Field(default="", validation_alias="REMNAWAVE_API_TOKEN")
+    # Если панель за Caddy с X-Api-Key.
     remnawave_caddy_token: str = Field(default="", validation_alias="REMNAWAVE_CADDY_TOKEN")
+    # UUID внутренних squad через запятую (обязательно для создания пользователя).
     remnawave_internal_squads_raw: str = Field(
         default="",
         validation_alias=AliasChoices(
@@ -76,10 +68,13 @@ class Settings(BaseSettings):
         ),
     )
 
+    # --- Локальная SQLite бота (счётчики, рефералы, заявки на оплату) ---
     database_path: str = Field(default="data/bot.db", validation_alias="DATABASE_PATH")
 
+    # --- Реферальная программа ---
     referral_bonus_days: int = Field(default=15, validation_alias="REFERRAL_BONUS_DAYS")
 
+    # --- Платежи ---
     payment_manual_details: str = Field(default="", validation_alias="PAYMENT_MANUAL_DETAILS")
     payment_provider_token: str = Field(default="", validation_alias="PAYMENT_PROVIDER_TOKEN")
     payment_currency: str = Field(default="RUB", validation_alias="PAYMENT_CURRENCY")
@@ -93,14 +88,8 @@ class Settings(BaseSettings):
 
     crypto_wallet_address: str = Field(default="", validation_alias="CRYPTO_WALLET_ADDRESS")
 
+    # --- Поддержка ---
     support_username: str = Field(default="", validation_alias="SUPPORT_USERNAME")
-    bot_username: str = Field(default="", validation_alias="BOT_USERNAME")
-
-    # HTTP(S)-прокси до api.telegram.org (если сеть режет Telegram). Пример: http://127.0.0.1:7890
-    telegram_proxy_url: str = Field(
-        default="",
-        validation_alias=AliasChoices("TELEGRAM_PROXY", "TELEGRAM_HTTPS_PROXY"),
-    )
 
     @field_validator("payment_stub_enabled", mode="before")
     @classmethod
@@ -124,7 +113,7 @@ class Settings(BaseSettings):
     @classmethod
     def _bonus_days(cls, v: object) -> int:
         try:
-            n = int(v)  # type: ignore[arg-type]
+            n = int(v)
         except (TypeError, ValueError):
             return 15
         return max(1, min(n, 3650))
@@ -136,20 +125,11 @@ class Settings(BaseSettings):
         ids = _parse_id_list(self.allowed_ids_csv)
         return set(ids) if ids else None
 
-    def profile_ids(self) -> list[str] | None:
-        return _parse_profile_ids(self.vpn_profile_ids_raw)
-
-    def vpn_backend_normalized(self) -> str:
-        v = (self.vpn_backend or "productd").strip().lower()
-        return v if v in ("productd", "remnawave") else "productd"
-
     def remnawave_internal_squad_uuids(self) -> list[str]:
         return [p.strip() for p in (self.remnawave_internal_squads_raw or "").split(",") if p.strip()]
 
     def api_configured(self) -> bool:
-        if self.vpn_backend_normalized() == "remnawave":
-            return bool(self.remnawave_api_token.strip() and self.remnawave_panel_url.strip())
-        return bool(self.vpn_api_token.strip())
+        return bool(self.remnawave_api_token.strip() and self.remnawave_panel_url.strip())
 
     def database_file(self) -> Path:
         p = Path(self.database_path)
@@ -158,4 +138,4 @@ class Settings(BaseSettings):
         return p
 
 
-settings = Settings()
+settings = Settings()  # type: ignore[call-arg]

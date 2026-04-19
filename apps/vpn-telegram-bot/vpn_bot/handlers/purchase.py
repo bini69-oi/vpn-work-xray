@@ -3,11 +3,11 @@ from __future__ import annotations
 import json
 import logging
 import time
+
 from aiogram import F, Router
 from aiogram.types import CallbackQuery, LabeledPrice, Message, PreCheckoutQuery
 
 from vpn_bot.config import settings
-from vpn_bot.services.subscription_service import resolve_reply_main_menu
 from vpn_bot.keyboards.purchase_kb import (
     admin_payment_keyboard,
     pay_methods_keyboard,
@@ -17,7 +17,7 @@ from vpn_bot.keyboards.purchase_kb import (
 from vpn_bot.services.api_client import VPNBackend
 from vpn_bot.services.payment_service import confirm_payment, create_pending_payment
 from vpn_bot.services.referral_service import finalize_referral_after_payment, get_referrer_for_payment_bonus
-from vpn_bot.services.subscription_service import vpn_user_id
+from vpn_bot.services.subscription_service import resolve_reply_main_menu, vpn_user_id
 from vpn_bot.utils import texts
 from vpn_bot.utils.formatting import PRICING
 
@@ -34,7 +34,7 @@ async def _apply_paid_months(api: VPNBackend, telegram_user_id: int, months: int
             uid,
             "telegram-user",
             "telegram_aiogram_bot",
-            settings.profile_ids(),
+            None,
             f"aiogram-pay-{telegram_user_id}-{months}-{int(time.time())}",
         )
         if st2 != 200:

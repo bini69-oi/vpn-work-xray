@@ -5,42 +5,27 @@ on:
   pull_request:
 
 jobs:
-  test-lint:
+  secret-scan:
     runs-on: ubuntu-latest
-    env:
-      MIN_COVERAGE: "80.0"
-      GOLANGCI_LINT_VERSION: "v1.64.8"
     steps:
       - name: Checkout
         uses: actions/checkout@v4
-
-      - name: Setup Go
-        uses: actions/setup-go@v5
+      - name: Setup Python
+        uses: actions/setup-python@v5
         with:
-          go-version-file: go.mod
-          cache: true
-
-      - name: Setup golangci-lint
-        run: go install github.com/golangci/golangci-lint/cmd/golangci-lint@${GOLANGCI_LINT_VERSION}
-
+          python-version: "3.13"
       - name: Secret scan
         run: make secret-scan
 
-      - name: Run full verify pipeline
-        run: make verify
-
-      - name: Upload coverage artifact
-        uses: actions/upload-artifact@v4
-        with:
-          name: coverage-out
-          path: coverage.out
-
-  bot-tests:
+  bot-quality:
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
       matrix:
         python-version: ["3.12", "3.13"]
+    defaults:
+      run:
+        working-directory: apps/vpn-telegram-bot
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -55,11 +40,22 @@ jobs:
             apps/vpn-telegram-bot/requirements-dev.txt
 
       - name: Install bot deps
-        working-directory: apps/vpn-telegram-bot
         run: |
           python -m pip install -U pip
           pip install -r requirements.txt -r requirements-dev.txt
 
-      - name: Run pytest
-        working-directory: apps/vpn-telegram-bot
-        run: python -m pytest -v --tb=short
+      - name: Ruff
+        run: python -m ruff check vpn_bot tests
+
+      - name: Mypy
+        run: python -m mypy vpn_bot
+
+      - name: Pytest + coverage gate (80%)
+        run: python -m pytest -v --tb=short --cov=vpn_bot --cov-report=term-missing --cov-fail-under=80
+
+      - name: Upload coverage artifact
+        if: matrix.python-version == '3.13'
+        uses: actions/upload-artifact@v4
+        with:
+          name: bot-coverage
+          path: apps/vpn-telegram-bot/.coverage*

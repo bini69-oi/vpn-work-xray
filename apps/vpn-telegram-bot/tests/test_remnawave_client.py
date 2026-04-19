@@ -2,16 +2,16 @@
 
 The goal is to lock down the *wire format* we send to the Remnawave Panel REST
 API (paths, headers, request bodies) and the *shape* we return to the handlers
-so they stay interchangeable with `VPNApiClient` via the `VPNBackend` Protocol.
+via the `VPNBackend` Protocol contract.
 """
 from __future__ import annotations
 
 import json
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 
 import pytest
 
-from tests._fake_session import FakeSession, RecordedCall, FakeResponse
+from tests._fake_session import FakeSession
 from vpn_bot.services.api_client import VPNBackend
 from vpn_bot.services.remnawave_client import ApiError, RemnawaveApiClient
 
@@ -187,7 +187,7 @@ class TestIssueLink:
         assert post.json["username"] == "tg42"
         # expireAt is ~30 days in the future in ISO UTC
         exp = datetime.fromisoformat(post.json["expireAt"].replace("Z", "+00:00"))
-        delta_days = (exp - datetime.now(timezone.utc)).days
+        delta_days = (exp - datetime.now(UTC)).days
         assert 28 <= delta_days <= 31
 
     async def test_creates_user_rejects_when_no_squads(self) -> None:
@@ -247,7 +247,7 @@ class TestIssueLink:
 
 class TestLifecycleRenew:
     async def test_renew_adds_days_to_future_expiry(self) -> None:
-        future = datetime.now(timezone.utc) + timedelta(days=10)
+        future = datetime.now(UTC) + timedelta(days=10)
         s = FakeSession()
         s.on(
             "GET",
@@ -276,7 +276,7 @@ class TestLifecycleRenew:
         assert abs(diff - 7 * 86400) < 60  # +7 days ± 1 minute
 
     async def test_renew_from_past_uses_now_as_baseline(self) -> None:
-        past = datetime.now(timezone.utc) - timedelta(days=20)
+        past = datetime.now(UTC) - timedelta(days=20)
         s = FakeSession()
         s.on(
             "GET",
@@ -298,7 +298,7 @@ class TestLifecycleRenew:
 
         patch_call = s.calls_for("PATCH", "/api/users")[0]
         new_exp = datetime.fromisoformat(patch_call.json["expireAt"].replace("Z", "+00:00"))
-        expected = datetime.now(timezone.utc) + timedelta(days=30)
+        expected = datetime.now(UTC) + timedelta(days=30)
         assert abs((new_exp - expected).total_seconds()) < 120
 
     async def test_renew_404_when_user_missing(self) -> None:
@@ -425,7 +425,7 @@ class TestGetDeliveryLinks:
         assert body == {"links": {}}
 
 
-class TestHealthAndStats:
+class TestHealth:
     async def test_health_passes_through(self) -> None:
         s = FakeSession()
         s.on("GET", "/api/system/health", 200, json.dumps({"ok": True}))
@@ -435,11 +435,6 @@ class TestHealthAndStats:
 
         assert status == 200
         assert body == {"ok": True}
-
-    async def test_profile_stats_unsupported_returns_501(self) -> None:
-        c = _make_client(FakeSession())
-        status, _ = await c.get_profile_stats()
-        assert status == 501
 
 
 class TestRequestAuthHeaders:
@@ -469,7 +464,6 @@ class TestProtocolConformance:
             "get_subscription",
             "get_delivery_links",
             "get_health",
-            "get_profile_stats",
         ):
             assert callable(getattr(c, attr)), f"{attr} missing from RemnawaveApiClient"
         # Also exercise the type to make sure assignments won't raise.

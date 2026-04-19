@@ -11,33 +11,14 @@ from vpn_bot.services.subscription_service import (
     delivery_profile_id,
     fetch_subscription_bundle,
     resolve_reply_main_menu,
-    vpn_user_id,
 )
 from vpn_bot.utils import texts
-from vpn_bot.utils.formatting import days_left, format_bytes, format_date_ru
+from vpn_bot.utils.formatting import days_left, format_bytes
 
 router = Router(name="subscription")
 
 # Лимит длины URL для кнопки Telegram
 _TG_URL_MAX = 2048
-
-
-def _find_user_profile_stats(stats: dict[str, Any], profile_id: str) -> tuple[int, int] | None:
-    items = stats.get("items")
-    if not isinstance(items, list):
-        return None
-    for it in items:
-        if not isinstance(it, dict):
-            continue
-        if str(it.get("profileId", "")) != profile_id:
-            continue
-        up = int(it.get("uploadBytes") or 0)
-        down = int(it.get("downloadBytes") or 0)
-        total = int(it.get("totalBytes") or (up + down))
-        limit_mb = int(it.get("trafficLimitMb") or 0)
-        limit = limit_mb * 1024 * 1024 if limit_mb > 0 else 1024 * 1024 * 1024 * 1024
-        return total, limit
-    return None
 
 
 def _pick_happ_import_link(links: dict[str, Any]) -> str | None:
@@ -88,14 +69,8 @@ async def my_vpn(message: Message, api: VPNBackend | None) -> None:
     total_used = int(sub_obj.get("usedTrafficBytes") or 0)
     raw_lim = int(sub_obj.get("trafficLimitBytes") or 0)
     total_limit = raw_lim if raw_lim > 0 else 1024 * 1024 * 1024 * 1024
-    pid = delivery_profile_id(uid)
-    pst, pdata = await api.get_profile_stats()
-    if pst == 200:
-        found = _find_user_profile_stats(pdata, pid)
-        if found:
-            total_used, total_limit = found
 
-    devices_line = "📱 Данные по лимиту устройств — в панели сервера."
+    devices_line = "📱 Данные по лимиту устройств — в панели Remnawave."
     body = texts.profile_text(
         status_label=status_label,
         plan_label=plan_label,

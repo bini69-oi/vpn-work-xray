@@ -4,10 +4,10 @@ import asyncio
 import logging
 
 from aiogram import F, Router
+from aiogram.enums import ParseMode
 from aiogram.filters import Command, StateFilter
 from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import State, StatesGroup
-from aiogram.enums import ParseMode
 from aiogram.types import CallbackQuery, Message
 
 from vpn_bot.config import settings
@@ -57,15 +57,10 @@ async def cb_mon_refresh(query: CallbackQuery, api: VPNBackend | None) -> None:
         await query.message.answer(texts.service_unavailable()) if query.message else None
         return
     st, data = await api.get_health()
-    mon_title = (
-        "📊 <b>Состояние Remnawave Panel</b>"
-        if settings.vpn_backend_normalized() == "remnawave"
-        else None
-    )
     body = format_health_report(
         st,
         data if isinstance(data, dict) else {"data": data},
-        title=mon_title,
+        title="📊 <b>Состояние Remnawave Panel</b>",
     )
     if query.message:
         await query.message.edit_text(body, reply_markup=monitoring_kb())

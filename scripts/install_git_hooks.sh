@@ -13,5 +13,5 @@ install -m 0755 "${ROOT_DIR}/scripts/hooks/pre-commit" "${HOOKS_DIR}/pre-commit"
 install -m 0755 "${ROOT_DIR}/scripts/hooks/pre-push" "${HOOKS_DIR}/pre-push"
 
 echo "Installed git hooks:"
-echo "  - pre-commit (runs make verify-quick)"
-echo "  - pre-push   (runs make verify-quick)"
+echo "  - pre-commit (runs make secret-scan + bot-lint + bot-typecheck)"
+echo "  - pre-push   (runs make verify — secret-scan + lint + typecheck + cov)"

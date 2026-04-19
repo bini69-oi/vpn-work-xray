@@ -1,27 +1,16 @@
-"""Tests for the backend-client factory in `vpn_bot.app`.
-
-The factory chooses between `VPNApiClient` and `RemnawaveApiClient` based on
-environment variables. We import `_build_backend_client` from `vpn_bot.app`
-and patch the module-level `settings` object with a custom `Settings`
-instance so that behaviour is deterministic.
-"""
+"""Tests for the Remnawave backend-client factory in `vpn_bot.app`."""
 from __future__ import annotations
 
 import pytest
 
 from tests._fake_session import FakeSession
 from vpn_bot.config.settings import Settings
-from vpn_bot.services.api_client import VPNApiClient
 from vpn_bot.services.remnawave_client import RemnawaveApiClient
 
-
-# All env variables any test in this module writes. We clear them between
-# consecutive `patch_settings(...)` invocations within one test so stale state
-# doesn't leak.
+# Variables this module flips between test cases. We clear them between
+# `patch_settings(...)` invocations so stale values from one case don't leak
+# into another.
 _MANAGED_ENV = (
-    "VPN_BACKEND",
-    "VPN_API_TOKEN",
-    "VPN_API_URL",
     "REMNAWAVE_PANEL_URL",
     "REMNAWAVE_BASE_URL",
     "REMNAWAVE_API_TOKEN",
@@ -36,10 +25,9 @@ def patch_settings(monkeypatch: pytest.MonkeyPatch):
     """Yield a helper that replaces `vpn_bot.app.settings` with a rebuilt instance.
 
     Env is applied via monkeypatch (not pydantic kwargs) so the test exercises
-    the real production env-parsing path, which behaves identically across
-    pydantic-settings 2.x minor versions.
+    the real production env-parsing path.
     """
-    import vpn_bot.app as app
+    from vpn_bot import app
 
     def _apply(**env: str) -> None:
         for key in _MANAGED_ENV:
@@ -52,34 +40,28 @@ def patch_settings(monkeypatch: pytest.MonkeyPatch):
 
 
 class TestBuildBackendClient:
-    def test_productd_is_default_when_token_present(self, patch_settings) -> None:
-        import vpn_bot.app as app
-
-        patch_settings(VPN_API_TOKEN="tok", VPN_API_URL="http://host:1")
-        client = app._build_backend_client(FakeSession())  # type: ignore[arg-type]
-
-        assert isinstance(client, VPNApiClient)
-
-    def test_productd_without_token_returns_none(self, patch_settings) -> None:
-        import vpn_bot.app as app
+    def test_no_token_returns_none(self, patch_settings) -> None:
+        from vpn_bot import app
 
         patch_settings()
         assert app._build_backend_client(FakeSession()) is None  # type: ignore[arg-type]
 
-    def test_remnawave_requires_url_and_token(self, patch_settings) -> None:
-        import vpn_bot.app as app
+    def test_only_url_returns_none(self, patch_settings) -> None:
+        from vpn_bot import app
 
-        patch_settings(VPN_BACKEND="remnawave", REMNAWAVE_API_TOKEN="t")
+        patch_settings(REMNAWAVE_PANEL_URL="https://p")
         assert app._build_backend_client(FakeSession()) is None  # type: ignore[arg-type]
 
-        patch_settings(VPN_BACKEND="remnawave", REMNAWAVE_PANEL_URL="https://p")
+    def test_only_token_returns_none(self, patch_settings) -> None:
+        from vpn_bot import app
+
+        patch_settings(REMNAWAVE_API_TOKEN="t")
         assert app._build_backend_client(FakeSession()) is None  # type: ignore[arg-type]
 
-    def test_remnawave_builds_client(self, patch_settings) -> None:
-        import vpn_bot.app as app
+    def test_full_config_builds_client(self, patch_settings) -> None:
+        from vpn_bot import app
 
         patch_settings(
-            VPN_BACKEND="remnawave",
             REMNAWAVE_API_TOKEN="tok",
             REMNAWAVE_PANEL_URL="https://panel.example",
             REMNAWAVE_INTERNAL_SQUAD_UUIDS="s1",
@@ -92,11 +74,10 @@ class TestBuildBackendClient:
         assert c._squads == ["s1"]
         assert c._headers.get("X-Api-Key") == "caddy"
 
-    def test_remnawave_without_squads_still_builds(self, patch_settings, caplog) -> None:
-        import vpn_bot.app as app
+    def test_without_squads_still_builds_with_warning(self, patch_settings, caplog) -> None:
+        from vpn_bot import app
 
         patch_settings(
-            VPN_BACKEND="remnawave",
             REMNAWAVE_API_TOKEN="tok",
             REMNAWAVE_PANEL_URL="https://panel.example",
         )
@@ -105,3 +86,11 @@ class TestBuildBackendClient:
 
         assert isinstance(c, RemnawaveApiClient)
         assert any("REMNAWAVE_INTERNAL_SQUAD_UUIDS" in rec.message for rec in caplog.records)
+
+    def test_without_config_logs_hint(self, patch_settings, caplog) -> None:
+        from vpn_bot import app
+
+        patch_settings()
+        with caplog.at_level("WARNING", logger="vpn_bot.app"):
+            assert app._build_backend_client(FakeSession()) is None  # type: ignore[arg-type]
+        assert any("REMNAWAVE_PANEL_URL" in rec.message for rec in caplog.records)

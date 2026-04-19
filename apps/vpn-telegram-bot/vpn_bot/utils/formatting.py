@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import html
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from typing import Any
 
 PRICING: dict[int, dict[str, int]] = {
@@ -59,15 +59,15 @@ def format_date_ru(iso_string: str | None) -> str:
     dt = parse_iso_dt(iso_string)
     if not dt:
         return "—"
-    return dt.astimezone(timezone.utc).strftime("%d.%m.%Y")
+    return dt.astimezone(UTC).strftime("%d.%m.%Y")
 
 
 def days_left(iso_string: str | None) -> int:
     dt = parse_iso_dt(iso_string)
     if not dt:
         return 0
-    now = datetime.now(tz=timezone.utc)
-    delta = dt.astimezone(timezone.utc) - now
+    now = datetime.now(tz=UTC)
+    delta = dt.astimezone(UTC) - now
     if delta.total_seconds() <= 0:
         return 0
     return int((delta.total_seconds() + 86399) // 86400)

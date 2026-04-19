@@ -43,9 +43,6 @@ class StubBackend:
     async def get_health(self):
         return 200, {}
 
-    async def get_profile_stats(self):
-        return 501, {}
-
 
 class TestIds:
     def test_vpn_user_id(self) -> None:

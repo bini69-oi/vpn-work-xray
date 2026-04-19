@@ -7,13 +7,13 @@ from vpn_bot.services.monitoring_service import format_health_report
 class TestFormatHealthReport:
     def test_default_title(self) -> None:
         out = format_health_report(200, {"ok": True})
-        assert "vpn-productd" in out
+        assert "Remnawave Panel" in out
         assert "true" in out.lower()
 
     def test_custom_title(self) -> None:
-        out = format_health_report(200, {"ok": True}, title="📊 <b>Remnawave</b>")
-        assert "Remnawave" in out
-        assert "vpn-productd" not in out
+        out = format_health_report(200, {"ok": True}, title="📊 <b>Custom</b>")
+        assert "Custom" in out
+        assert "Remnawave Panel" not in out
 
     def test_non_200_includes_http_code(self) -> None:
         out = format_health_report(503, {"error": "down"})

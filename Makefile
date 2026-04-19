@@ -1,72 +1,54 @@
-GO ?= go
 PYTHON ?= python3
-GOLANGCI_LINT ?= $(shell $(GO) env GOPATH)/bin/golangci-lint
-MIN_COVERAGE ?= 80.0
-XRAY_LOCATION_ASSET ?= var/vpn-product-predeploy3/assets
-CMD_PKGS :=
-ifneq ($(wildcard cmd/vpn-productd),)
-CMD_PKGS += ./cmd/vpn-productd
-endif
-ifneq ($(wildcard cmd/vpn-productctl),)
-CMD_PKGS += ./cmd/vpn-productctl
-endif
-PKGS ?= ./internal/... $(CMD_PKGS)
-COVERPKGS ?= ./internal/configgen ./internal/connection
-LINT_TARGETS ?= ./internal/... $(CMD_PKGS)
-ALL_GO_PKGS ?= ./...
+BOT_DIR := apps/vpn-telegram-bot
+BOT_PY  := $(BOT_DIR)/.venv/bin/python
+BOT_PIP := $(BOT_DIR)/.venv/bin/pip
 
-.PHONY: test test-all bench build lint cover verify verify-quick secret-scan ci bot bot-venv bot-test
+.PHONY: help bot-venv bot bot-test bot-cov bot-lint bot-typecheck verify secret-scan ci clean
 
-build:
-	$(GO) build -trimpath -ldflags="-s -w" -o vpn-productd ./cmd/vpn-productd
-	$(GO) build -trimpath -ldflags="-s -w" -o vpn-productctl ./cmd/vpn-productctl
+help:
+	@echo "VPN Product (Remnawave + Telegram bot) — Makefile targets"
+	@echo
+	@echo "  make bot-venv       — создать apps/vpn-telegram-bot/.venv с runtime + dev-зависимостями"
+	@echo "  make bot            — запустить Telegram-бот (Remnawave backend)"
+	@echo "  make bot-test       — pytest (быстро, без покрытия)"
+	@echo "  make bot-cov        — pytest + покрытие (порог 80%)"
+	@echo "  make bot-lint       — ruff линт (apps/vpn-telegram-bot)"
+	@echo "  make bot-typecheck  — mypy на vpn_bot/"
+	@echo "  make verify         — secret-scan + lint + typecheck + cov (то, что гоняет CI)"
+	@echo "  make secret-scan    — поиск утечек секретов в коде"
 
-test:
-	$(GO) test $(PKGS)
-
-test-all:
-	XRAY_LOCATION_ASSET="$(XRAY_LOCATION_ASSET)" bash scripts/prepare_test_assets.sh
-	$(GO) test $(ALL_GO_PKGS)
-
-bench:
-	$(GO) test ./internal/configgen ./internal/storage/sqlite -bench=. -benchmem -run=^$
-
-lint:
-	$(GOLANGCI_LINT) run $(LINT_TARGETS)
-
-cover:
-	$(GO) test $(COVERPKGS) -coverprofile=coverage.out
-	$(GO) tool cover -html=coverage.out -o coverage.html
-
-secret-scan:
-	python3 scripts/secret_scan.py
-
-verify-quick:
-	$(GO) test $(PKGS)
-	$(GOLANGCI_LINT) run $(LINT_TARGETS)
-	python3 scripts/secret_scan.py
-
-verify:
-	python3 scripts/secret_scan.py
-	$(GO) test $(PKGS)
-	XRAY_LOCATION_ASSET="$(XRAY_LOCATION_ASSET)" bash scripts/prepare_test_assets.sh
-	$(GO) test $(ALL_GO_PKGS)
-	$(GOLANGCI_LINT) run $(LINT_TARGETS)
-	$(GO) test $(COVERPKGS) -coverprofile=coverage.out
-	$(GO) tool cover -func=coverage.out | awk -v min="$(MIN_COVERAGE)" '/^total:/ {gsub("%","",$$3); cov=$$3+0; if (cov < min) {printf("coverage %.2f%% is below minimum %.2f%%\n", cov, min); exit 1} else {printf("coverage %.2f%% (min %.2f%%)\n", cov, min)}}'
-
-ci: verify
-
-# Telegram-бот (aiogram) — apps/vpn-telegram-bot/
 bot-venv:
-	cd apps/vpn-telegram-bot && $(PYTHON) -m venv .venv && ./.venv/bin/pip install -U pip \
+	cd $(BOT_DIR) && $(PYTHON) -m venv .venv \
+		&& ./.venv/bin/pip install -U pip \
 		&& ./.venv/bin/pip install -r requirements.txt \
 		&& ./.venv/bin/pip install -r requirements-dev.txt
 
 bot:
-	@test -f apps/vpn-telegram-bot/.venv/bin/python || (echo "Сначала выполни: make bot-venv" && exit 1)
-	cd apps/vpn-telegram-bot && ./.venv/bin/python -m vpn_bot
+	@test -f $(BOT_PY) || (echo "Сначала выполни: make bot-venv" && exit 1)
+	cd $(BOT_DIR) && ./.venv/bin/python -m vpn_bot
 
 bot-test:
-	@test -f apps/vpn-telegram-bot/.venv/bin/python || (echo "Сначала выполни: make bot-venv" && exit 1)
-	cd apps/vpn-telegram-bot && ./.venv/bin/python -m pytest -q
+	@test -f $(BOT_PY) || (echo "Сначала выполни: make bot-venv" && exit 1)
+	cd $(BOT_DIR) && ./.venv/bin/python -m pytest -q
+
+bot-cov:
+	@test -f $(BOT_PY) || (echo "Сначала выполни: make bot-venv" && exit 1)
+	cd $(BOT_DIR) && ./.venv/bin/python -m pytest --cov=vpn_bot --cov-report=term-missing --cov-fail-under=80
+
+bot-lint:
+	@test -f $(BOT_PY) || (echo "Сначала выполни: make bot-venv" && exit 1)
+	cd $(BOT_DIR) && ./.venv/bin/python -m ruff check vpn_bot tests
+
+bot-typecheck:
+	@test -f $(BOT_PY) || (echo "Сначала выполни: make bot-venv" && exit 1)
+	cd $(BOT_DIR) && ./.venv/bin/python -m mypy vpn_bot
+
+secret-scan:
+	$(PYTHON) scripts/secret_scan.py
+
+verify: secret-scan bot-lint bot-typecheck bot-cov
+
+ci: verify
+
+clean:
+	rm -rf $(BOT_DIR)/.venv $(BOT_DIR)/.pytest_cache $(BOT_DIR)/.mypy_cache $(BOT_DIR)/.ruff_cache $(BOT_DIR)/.coverage

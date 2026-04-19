@@ -4,5 +4,10 @@ set -euo pipefail
 ROOT_DIR="$(git rev-parse --show-toplevel)"
 cd "${ROOT_DIR}"
 
-echo "[pre-push] running make verify-quick..."
-make verify-quick
+if [[ -x apps/vpn-telegram-bot/.venv/bin/python ]]; then
+  echo "[pre-push] make verify (secret-scan + lint + typecheck + cov)"
+  make verify
+else
+  echo "[pre-push] нет apps/vpn-telegram-bot/.venv — пропускаю verify (запусти 'make bot-venv' и поставь снова)"
+  make secret-scan
+fi

@@ -4,5 +4,11 @@ set -euo pipefail
 ROOT_DIR="$(git rev-parse --show-toplevel)"
 cd "${ROOT_DIR}"
 
-echo "[pre-commit] running make verify-quick..."
-make verify-quick
+echo "[pre-commit] secret-scan + lint + typecheck (без полного pytest — он на pre-push)"
+make secret-scan
+if [[ -x apps/vpn-telegram-bot/.venv/bin/python ]]; then
+  make bot-lint
+  make bot-typecheck
+else
+  echo "[pre-commit] skip lint/typecheck — нет .venv (запусти 'make bot-venv')"
+fi

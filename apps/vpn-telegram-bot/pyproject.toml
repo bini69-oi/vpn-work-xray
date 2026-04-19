@@ -1,0 +1,83 @@
+[tool.ruff]
+line-length = 110
+target-version = "py312"
+extend-exclude = [".venv", "data", "__pycache__"]
+
+[tool.ruff.lint]
+# Pragmatic preset — поймать настоящие баги, не утонуть в косметике.
+select = [
+    "E",     # pycodestyle errors
+    "F",     # pyflakes
+    "W",     # pycodestyle warnings
+    "I",     # isort
+    "B",     # flake8-bugbear
+    "UP",    # pyupgrade
+    "SIM",   # simplify
+    "RET",   # return
+    "C4",    # comprehensions
+    "PIE",   # misc
+    "PL",    # pylint subset
+    "RUF",   # ruff-specific
+]
+ignore = [
+    "E501",     # длина строки — ловит и комментарии, не критично
+    "PLR0912",  # too many branches (handlers большие, нормально)
+    "PLR0913",  # too many arguments (aiogram-сигнатуры)
+    "PLR0915",  # too many statements
+    "PLR2004",  # magic numbers (PRICING, days, retries)
+    "B008",     # function call in default arg (Field(...) валидно)
+    "RUF012",   # mutable class attribute (FSM States)
+    "RUF001",   # ambiguous Unicode in string — у нас почти весь UI на русском
+    "RUF002",   # ambiguous Unicode в docstring
+    "RUF003",   # ambiguous Unicode в комментарии
+    "RUF059",   # unused unpacked vars (st, status, _ = ... — намеренно)
+    "PLC0415",  # import outside top-level (ленивая загрузка клавиатур и т.п.)
+    "SIM117",   # вложенные with (aiohttp + json валидно)
+]
+
+[tool.ruff.lint.per-file-ignores]
+"tests/*" = ["PLR2004", "S101", "PLR0912"]
+"vpn_bot/utils/texts.py" = ["E501"]
+
+[tool.mypy]
+python_version = "3.12"
+files = ["vpn_bot"]
+ignore_missing_imports = true
+check_untyped_defs = true
+warn_unused_ignores = true
+warn_redundant_casts = true
+no_implicit_optional = true
+disable_error_code = [
+    "var-annotated",   # FSM/aiogram паттерны без аннотаций
+    "attr-defined",    # aiogram dynamic attrs
+    "arg-type",        # aiogram CallbackQuery types
+    "return-value",    # aiogram return types
+    "assignment",      # pydantic + Field()
+    "union-attr",      # message.text/message.from_user None checks повсюду
+    "import-untyped",  # aiosqlite + opt deps
+    "no-untyped-def",  # большая часть handlers без аннотаций
+    "name-defined",    # forward refs FSM
+    "operator",        # int + None в FSM data
+    "index",           # callback_data parts
+    "call-overload",   # aiogram overloads
+    "misc",
+]
+
+[tool.coverage.run]
+source = ["vpn_bot"]
+branch = true
+omit = [
+    "vpn_bot/__main__.py",
+    "vpn_bot/database/db.py",   # пустая обёртка над aiosqlite
+]
+
+[tool.coverage.report]
+exclude_lines = [
+    "pragma: no cover",
+    "if __name__ == .__main__.:",
+    "raise NotImplementedError",
+    "raise SystemExit",
+    "if TYPE_CHECKING:",
+]
+show_missing = true
+skip_empty = true

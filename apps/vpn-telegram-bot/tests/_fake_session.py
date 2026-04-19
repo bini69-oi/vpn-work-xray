@@ -11,8 +11,9 @@ the `aioresponses`/`aiohttp-mock` optional dependencies.
 """
 from __future__ import annotations
 
+from collections.abc import Callable
 from dataclasses import dataclass, field
-from typing import Any, Callable
+from typing import Any
 
 
 @dataclass
@@ -32,7 +33,7 @@ class FakeResponse:
     async def text(self) -> str:
         return self._body
 
-    async def __aenter__(self) -> "FakeResponse":
+    async def __aenter__(self) -> FakeResponse:
         return self
 
     async def __aexit__(self, *_: Any) -> None:
