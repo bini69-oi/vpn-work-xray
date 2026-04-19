@@ -15,19 +15,38 @@ from vpn_bot.services.api_client import VPNApiClient
 from vpn_bot.services.remnawave_client import RemnawaveApiClient
 
 
-def _settings(**env: str) -> Settings:
-    base = {"BOT_TOKEN": "stub"}
-    base.update(env)
-    return Settings(_env_file=None, **{k: v for k, v in base.items()})  # type: ignore[arg-type]
+# All env variables any test in this module writes. We clear them between
+# consecutive `patch_settings(...)` invocations within one test so stale state
+# doesn't leak.
+_MANAGED_ENV = (
+    "VPN_BACKEND",
+    "VPN_API_TOKEN",
+    "VPN_API_URL",
+    "REMNAWAVE_PANEL_URL",
+    "REMNAWAVE_BASE_URL",
+    "REMNAWAVE_API_TOKEN",
+    "REMNAWAVE_CADDY_TOKEN",
+    "REMNAWAVE_INTERNAL_SQUAD_UUIDS",
+    "REMNAWAVE_INTERNAL_SQUAD_UUID",
+)
 
 
 @pytest.fixture
 def patch_settings(monkeypatch: pytest.MonkeyPatch):
-    """Yield a helper that replaces `vpn_bot.app.settings` with a built instance."""
+    """Yield a helper that replaces `vpn_bot.app.settings` with a rebuilt instance.
+
+    Env is applied via monkeypatch (not pydantic kwargs) so the test exercises
+    the real production env-parsing path, which behaves identically across
+    pydantic-settings 2.x minor versions.
+    """
     import vpn_bot.app as app
 
     def _apply(**env: str) -> None:
-        monkeypatch.setattr(app, "settings", _settings(**env))
+        for key in _MANAGED_ENV:
+            monkeypatch.delenv(key, raising=False)
+        for k, v in env.items():
+            monkeypatch.setenv(k, v)
+        monkeypatch.setattr(app, "settings", Settings(_env_file=None))  # type: ignore[call-arg]
 
     return _apply
 
